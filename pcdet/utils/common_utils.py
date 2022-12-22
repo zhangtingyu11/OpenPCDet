@@ -19,12 +19,31 @@ def check_numpy_to_torch(x):
 
 
 def limit_period(val, offset=0.5, period=np.pi):
+    """将数值转换到-peroid*offset ~ peroid*offset
+
+    Args:
+        val (_type_): _description_
+        offset (float, optional): _description_. Defaults to 0.5.
+        period (_type_, optional): _description_. Defaults to np.pi.
+
+    Returns:
+        _type_: _description_
+    """
     val, is_numpy = check_numpy_to_torch(val)
     ans = val - torch.floor(val / period + offset) * period
     return ans.numpy() if is_numpy else ans
 
 
 def drop_info_with_name(info, name):
+    """去除某一类的障碍物的信息
+
+    Args:
+        info (_type_): 存储障碍物信息的字典,字典中每个value都是np.array
+        name (_type_): 需要去除的障碍物的类别名
+
+    Returns:
+        _type_: _description_
+    """
     ret_info = {}
     keep_indices = [i for i, x in enumerate(info['name']) if x != name]
     for key in info.keys():
@@ -33,7 +52,7 @@ def drop_info_with_name(info, name):
 
 
 def rotate_points_along_z(points, angle):
-    """
+    """绕着Z轴逆时针旋转angle角度
     Args:
         points: (B, N, 3 + C)
         angle: (B), angle along z-axis, angle increases x ==> y
@@ -52,12 +71,22 @@ def rotate_points_along_z(points, angle):
         -sina, cosa, zeros,
         zeros, zeros, ones
     ), dim=1).view(-1, 3, 3).float()
+    #* (B, N, 3) * (B, 3, 3) = (B, N, 3)
     points_rot = torch.matmul(points[:, :, 0:3], rot_matrix)
     points_rot = torch.cat((points_rot, points[:, :, 3:]), dim=-1)
     return points_rot.numpy() if is_numpy else points_rot
 
 
 def mask_points_by_range(points, limit_range):
+    """过滤在规定范围外的点云
+
+    Args:
+        points (_type_): 点云
+        limit_range (_type_): 限定的点云范围
+
+    Returns:
+        _type_: 当前点云的掩码
+    """
     mask = (points[:, 0] >= limit_range[0]) & (points[:, 0] <= limit_range[3]) \
            & (points[:, 1] >= limit_range[1]) & (points[:, 1] <= limit_range[4])
     return mask

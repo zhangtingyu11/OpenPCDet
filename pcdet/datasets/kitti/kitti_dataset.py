@@ -27,6 +27,7 @@ class KittiDataset(DatasetTemplate):
         self.root_split_path = self.root_path / ('training' if self.split != 'test' else 'testing')
 
         split_dir = self.root_path / 'ImageSets' / (self.split + '.txt')
+        #* self.sample_id_list记录划分的子数据集中样本的索引
         self.sample_id_list = [x.strip() for x in open(split_dir).readlines()] if split_dir.exists() else None
 
         self.kitti_infos = []
@@ -42,6 +43,31 @@ class KittiDataset(DatasetTemplate):
             if not info_path.exists():
                 continue
             with open(info_path, 'rb') as f:
+                #* infos是一个列表，列表中的每个元素是一个字典，包含以下key
+                #* point_cloud:value为一个字典,键值对如下
+                #*      num_features:点的特征维度数，例如4
+                #*      lidar_idx:对应的lidar点云索引，例如000000
+                #* image:value为一个字典,键值对如下
+                #*      image_idx:对应的图像的索引，例如000000
+                #*      image_shape:图像的尺寸， 例如array([ 370, 1224], dtype=int32)
+                #* calib:value为一个字典,键值对如下
+                #*      P2:P2矩阵
+                #*      R0_rect:R0矩阵
+                #*      Tr_velo_to_cam:lidar到相机的旋转平移矩阵
+                #* annos:value为一个字典,键值对如下
+                #*      name:该样本中包含的包围框的类别名,np.array
+                #*      truncated:该样本中包含的包围框的截断,np.array
+                #*      occluded:该样本中包含的包围框的遮挡,np.array
+                #*      alpha:该样本中包含的包围框的观测角，np.array
+                #*      bbox:该样本中包含的包围框的2D包围框，np.array
+                #*      dimensions:该样本中包含的包围框的尺寸信息，np.array
+                #*      location:该样本中包含的包围框的三维位置信息，np.array
+                #*      rotation_y:该样本中包含的包围框的航向角信息，np.array
+                #*      score:该样本中包含的包围框的置信度，默认是-1，np.array
+                #*      difficulty:该样本中包含的包围框的难度，np.array，0是easy,1是moderate,2是hard,-1是其他
+                #*      index:该样本中包含的包围框在当前样本中的索引，Dontcare是-1， np.array
+                #*      gt_boxes_lidar:该样本中包含的包围框内在lidar坐标系下的三维标签,[x,y,z,dx,dy,dz,heading],np.array
+                #*      num_points_in_gt:该样本中包含的包围框内点的个数, np.array
                 infos = pickle.load(f)
                 kitti_infos.extend(infos)
 
@@ -111,6 +137,14 @@ class KittiDataset(DatasetTemplate):
         return calibration_kitti.Calibration(calib_file)
 
     def get_road_plane(self, idx):
+        """返回水平面的法线方向
+
+        Args:
+            idx (_type_): 当前帧的索引
+
+        Returns:
+            _type_: 道路的平面方程, ax+by+cz+d=0, [a,b,c,d]
+        """
         plane_file = self.root_split_path / 'planes' / ('%s.txt' % idx)
         if not plane_file.exists():
             return None
@@ -140,9 +174,11 @@ class KittiDataset(DatasetTemplate):
 
         """
         pts_img, pts_rect_depth = calib.rect_to_img(pts_rect)
+        #* 首先点需要在图像上
         val_flag_1 = np.logical_and(pts_img[:, 0] >= 0, pts_img[:, 0] < img_shape[1])
         val_flag_2 = np.logical_and(pts_img[:, 1] >= 0, pts_img[:, 1] < img_shape[0])
         val_flag_merge = np.logical_and(val_flag_1, val_flag_2)
+        #* 其次点需要落在相机前方
         pts_valid_flag = np.logical_and(val_flag_merge, pts_rect_depth >= 0)
 
         return pts_valid_flag
@@ -238,7 +274,7 @@ class KittiDataset(DatasetTemplate):
             info = infos[k]
             sample_idx = info['point_cloud']['lidar_idx']
             points = self.get_lidar(sample_idx)
-            annos = info['annos']
+            annos = ['annos']
             names = annos['name']
             difficulty = annos['difficulty']
             bbox = annos['bbox']
@@ -372,17 +408,44 @@ class KittiDataset(DatasetTemplate):
         # index = 4
         if self._merge_all_iters_to_one_epoch:
             index = index % len(self.kitti_infos)
-
+        #* self.kitti_infos是一个列表，列表中的每个元素是一个字典，包含以下key
+        #* point_cloud:value为一个字典,键值对如下
+        #*      num_features:点的特征维度数，例如4
+        #*      lidar_idx:对应的lidar点云索引，例如000000
+        #* image:value为一个字典,键值对如下
+        #*      image_idx:对应的图像的索引，例如000000
+        #*      image_shape:图像的尺寸， 例如array([ 370, 1224], dtype=int32)
+        #* calib:value为一个字典,键值对如下
+        #*      P2:P2矩阵
+        #*      R0_rect:R0矩阵
+        #*      Tr_velo_to_cam:lidar到相机的旋转平移矩阵
+        #* annos:value为一个字典,键值对如下
+        #*      name:该样本中包含的包围框的类别名,np.array
+        #*      truncated:该样本中包含的包围框的截断,np.array
+        #*      occluded:该样本中包含的包围框的遮挡,np.array
+        #*      alpha:该样本中包含的包围框的观测角，np.array
+        #*      bbox:该样本中包含的包围框的2D包围框，np.array
+        #*      dimensions:该样本中包含的包围框的尺寸信息，np.array
+        #*      location:该样本中包含的包围框的三维位置信息，np.array
+        #*      rotation_y:该样本中包含的包围框的航向角信息，np.array
+        #*      score:该样本中包含的包围框的置信度，默认是-1，np.array
+        #*      difficulty:该样本中包含的包围框的难度，np.array，0是easy,1是moderate,2是hard,-1是其他
+        #*      index:该样本中包含的包围框在当前样本中的索引，Dontcare是-1， np.array
+        #*      gt_boxes_lidar:该样本中包含的包围框内在lidar坐标系下的三维标签,[x,y,z,dx,dy,dz,heading],np.array
+        #*      num_points_in_gt:该样本中包含的包围框内点的个数, np.array
         info = copy.deepcopy(self.kitti_infos[index])
 
+        #* 对应的lidar点云索引，例如000000
         sample_idx = info['point_cloud']['lidar_idx']
+        #* 图像的尺寸， 例如array([ 370, 1224], dtype=int32)
         img_shape = info['image']['image_shape']
+        #* 获取当前样本的标定类
         calib = self.get_calib(sample_idx)
         get_item_list = self.dataset_cfg.get('GET_ITEM_LIST', ['points'])
 
         input_dict = {
-            'frame_id': sample_idx,
-            'calib': calib,
+            'frame_id': sample_idx, #* frame_id 是当前帧的索引，例如004563
+            'calib': calib,         #* calib 是当前帧的calib类
         }
 
         if 'annos' in info:
@@ -390,7 +453,9 @@ class KittiDataset(DatasetTemplate):
             annos = common_utils.drop_info_with_name(annos, name='DontCare')
             loc, dims, rots = annos['location'], annos['dimensions'], annos['rotation_y']
             gt_names = annos['name']
+            #* gt_boxes_camera是相机坐标系下的三维框信息
             gt_boxes_camera = np.concatenate([loc, dims, rots[..., np.newaxis]], axis=1).astype(np.float32)
+            #* gt_boxes_lidar是lidar坐标系下的三维框信息
             gt_boxes_lidar = box_utils.boxes3d_kitti_camera_to_lidar(gt_boxes_camera, calib)
 
             input_dict.update({
@@ -425,6 +490,20 @@ class KittiDataset(DatasetTemplate):
         data_dict = self.prepare_data(data_dict=input_dict)
 
         data_dict['image_shape'] = img_shape
+        """
+        返回的data_dict
+            frame_id:帧id
+            gt_boxes:gt框, [x,y,z,dx,dy,dz,heading]
+            points:点云
+            flip_x:是否绕着X轴进行翻转
+            noise_rot: 整片点云逆时针旋转的角度
+            noise_scale: 整片点云缩放的尺度
+            use_lead_xyz: 是否使用xyz数据
+            voxels: 非空voxel个数(不超过最大voxel个数) * voxel中最大点个数 * 点特征维度
+            coordinates: voxel的索引, 非空voxel个数 * 3, [zidx, yidx, xidx]
+            num_points: 非空voxel中的点个数(不超过voxel中最大点个数), 非空voxel个数
+            image_shape: 图像尺寸
+        """
         return data_dict
 
 

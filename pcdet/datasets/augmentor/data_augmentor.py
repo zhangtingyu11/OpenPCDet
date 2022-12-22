@@ -41,11 +41,27 @@ class DataAugmentor(object):
         self.__dict__.update(d)
 
     def random_world_flip(self, data_dict=None, config=None):
+        """全局翻转
+
+        Args:
+            data_dict (_type_, optional): _description_. Defaults to None.
+                frame_id:帧id
+                gt_names:gt框的类别名
+                gt_boxes:gt框, [x,y,z,dx,dy,dz,heading]
+                points:点云
+            config (_type_, optional): 翻转的配置. Defaults to None.
+
+        Returns:
+            _type_: _description_
+        """
         if data_dict is None:
             return partial(self.random_world_flip, config=config)
         gt_boxes, points = data_dict['gt_boxes'], data_dict['points']
         for cur_axis in config['ALONG_AXIS_LIST']:
             assert cur_axis in ['x', 'y']
+            #* gt_boxes是翻转后的gt框
+            #* points是翻转后的点云
+            #* enable表示是否翻转，翻转了为True，不翻转为False
             gt_boxes, points, enable = getattr(augmentor_utils, 'random_flip_along_%s' % cur_axis)(
                 gt_boxes, points, return_flip=True
             )
@@ -59,11 +75,29 @@ class DataAugmentor(object):
 
         data_dict['gt_boxes'] = gt_boxes
         data_dict['points'] = points
+        """
+        返回的data_dict
+            frame_id:帧id
+            gt_names:gt框的类别名
+            gt_boxes:gt框, [x,y,z,dx,dy,dz,heading]
+            points:点云
+            flip_x:是否绕着X轴进行翻转
+        """
         return data_dict
 
     def random_world_rotation(self, data_dict=None, config=None):
+        """全局旋转
+
+        Args:
+            data_dict (_type_, optional): _description_. Defaults to None.
+            config (_type_, optional): 全局旋转的配置. Defaults to None.
+
+        Returns:
+            _type_: _description_
+        """
         if data_dict is None:
             return partial(self.random_world_rotation, config=config)
+        #* 随机旋转的范围
         rot_range = config['WORLD_ROT_ANGLE']
         if not isinstance(rot_range, list):
             rot_range = [-rot_range, rot_range]
@@ -79,9 +113,27 @@ class DataAugmentor(object):
         data_dict['gt_boxes'] = gt_boxes
         data_dict['points'] = points
         data_dict['noise_rot'] = noise_rot
+        """
+        返回的data_dict
+            frame_id:帧id
+            gt_names:gt框的类别名
+            gt_boxes:gt框, [x,y,z,dx,dy,dz,heading]
+            points:点云
+            flip_x:是否绕着X轴进行翻转
+            noise_rot: 整片点云逆时针旋转的角度
+        """
         return data_dict
 
     def random_world_scaling(self, data_dict=None, config=None):
+        """全局缩放
+
+        Args:
+            data_dict (_type_, optional): _description_. Defaults to None.
+            config (_type_, optional): 全局缩放的配置. Defaults to None.
+
+        Returns:
+            _type_: _description_
+        """
         if data_dict is None:
             return partial(self.random_world_scaling, config=config)
         
@@ -98,6 +150,16 @@ class DataAugmentor(object):
         data_dict['gt_boxes'] = gt_boxes
         data_dict['points'] = points
         data_dict['noise_scale'] = noise_scale
+        """
+        返回的data_dict
+            frame_id:帧id
+            gt_names:gt框的类别名
+            gt_boxes:gt框, [x,y,z,dx,dy,dz,heading]
+            points:点云
+            flip_x:是否绕着X轴进行翻转
+            noise_rot: 整片点云逆时针旋转的角度
+            noise_scale: 整片点云缩放的尺度
+        """
         return data_dict
 
     def random_image_flip(self, data_dict=None, config=None):
@@ -280,4 +342,15 @@ class DataAugmentor(object):
                 data_dict['gt_boxes2d'] = data_dict['gt_boxes2d'][gt_boxes_mask]
 
             data_dict.pop('gt_boxes_mask')
+        """
+        返回的data_dict
+            frame_id:帧id
+            gt_names:gt框的类别名
+            gt_boxes:gt框, [x,y,z,dx,dy,dz,heading]
+            points:点云
+            flip_x:是否绕着X轴进行翻转
+            noise_rot: 整片点云逆时针旋转的角度
+            noise_scale: 整片点云缩放的尺度
+            use_lead_xyz: 是否使用xyz数据
+        """
         return data_dict

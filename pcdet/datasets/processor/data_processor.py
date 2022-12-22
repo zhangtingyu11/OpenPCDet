@@ -14,6 +14,15 @@ except:
 
 class VoxelGeneratorWrapper():
     def __init__(self, vsize_xyz, coors_range_xyz, num_point_features, max_num_points_per_voxel, max_num_voxels):
+        """生成voxel的包装器
+
+        Args:
+            vsize_xyz (_type_): voxel size, [dx, dy, dz]
+            coors_range_xyz (_type_): 点云的xyz的范围, [xmin, ymin, zmin, xmax, ymax, zmax]
+            num_point_features (_type_): 点云的特征
+            max_num_points_per_voxel (_type_): 每个voxel中最大点个数
+            max_num_voxels (_type_): 最大voxel个数
+        """
         try:
             from spconv.utils import VoxelGeneratorV2 as VoxelGenerator
             self.spconv_ver = 1
@@ -42,6 +51,16 @@ class VoxelGeneratorWrapper():
             )
 
     def generate(self, points):
+        """生成voxel
+
+        Args:
+            points (_type_): 输入的点云
+
+        Returns:
+           voxels: 非空voxel个数(不超过最大voxel个数) * voxel中最大点个数 * 点特征维度
+           coordinates: voxel的索引, 非空voxel个数 * 3, [zidx, yidx, xidx]
+           num_points: 非空voxel中的点个数(不超过voxel中最大点个数), 非空voxel个数
+        """
         if self.spconv_ver == 1:
             voxel_output = self._voxel_generator.generate(points)
             if isinstance(voxel_output, dict):
@@ -62,6 +81,14 @@ class VoxelGeneratorWrapper():
 
 class DataProcessor(object):
     def __init__(self, processor_configs, point_cloud_range, training, num_point_features):
+        """初始化DataProcessor
+
+        Args:
+            processor_configs (_type_): 预处理配置，是一个列表，列表中每个元素是一个字典
+            point_cloud_range (_type_): 点云范围[xmin, ymin, zmin, xmax, ymax, zmax]
+            training (_type_): 是否是训练模式
+            num_point_features (_type_): 输入的点云的特征维度数
+        """
         self.point_cloud_range = point_cloud_range
         self.training = training
         self.num_point_features = num_point_features
@@ -76,22 +103,51 @@ class DataProcessor(object):
             self.data_processor_queue.append(cur_processor)
 
     def mask_points_and_boxes_outside_range(self, data_dict=None, config=None):
+        """将范围外的点云和包围框去除
+
+        Args:
+            data_dict (_type_, optional): _description_. Defaults to None.
+            config (_type_, optional): 该预处理方法的配置. Defaults to None.
+
+        Returns:
+            _type_: _description_
+        """
         if data_dict is None:
             return partial(self.mask_points_and_boxes_outside_range, config=config)
 
         if data_dict.get('points', None) is not None:
             mask = common_utils.mask_points_by_range(data_dict['points'], self.point_cloud_range)
             data_dict['points'] = data_dict['points'][mask]
-
+        #* 根据USE_CENTER_TO_FILTER决定是否根据包围框中心点在不在点云范围内过滤包围框
         if data_dict.get('gt_boxes', None) is not None and config.REMOVE_OUTSIDE_BOXES and self.training:
             mask = box_utils.mask_boxes_outside_range_numpy(
                 data_dict['gt_boxes'], self.point_cloud_range, min_num_corners=config.get('min_num_corners', 1), 
                 use_center_to_filter=config.get('USE_CENTER_TO_FILTER', True)
             )
             data_dict['gt_boxes'] = data_dict['gt_boxes'][mask]
+        """
+        返回的data_dict
+            frame_id:帧id
+            gt_names:gt框的类别名
+            gt_boxes:gt框, [x,y,z,dx,dy,dz,heading]
+            points:点云
+            flip_x:是否绕着X轴进行翻转
+            noise_rot: 整片点云逆时针旋转的角度
+            noise_scale: 整片点云缩放的尺度
+            use_lead_xyz: 是否使用xyz数据
+        """
         return data_dict
 
     def shuffle_points(self, data_dict=None, config=None):
+        """打乱点云
+
+        Args:
+            data_dict (_type_, optional): _description_. Defaults to None.
+            config (_type_, optional): 该预处理操作的配置. Defaults to None.
+
+        Returns:
+            _type_: _description_
+        """
         if data_dict is None:
             return partial(self.shuffle_points, config=config)
 
@@ -100,12 +156,32 @@ class DataProcessor(object):
             shuffle_idx = np.random.permutation(points.shape[0])
             points = points[shuffle_idx]
             data_dict['points'] = points
-
+        """
+        返回的data_dict
+            frame_id:帧id
+            gt_names:gt框的类别名
+            gt_boxes:gt框, [x,y,z,dx,dy,dz,heading]
+            points:点云
+            flip_x:是否绕着X轴进行翻转
+            noise_rot: 整片点云逆时针旋转的角度
+            noise_scale: 整片点云缩放的尺度
+            use_lead_xyz: 是否使用xyz数据
+        """
         return data_dict
 
     def transform_points_to_voxels_placeholder(self, data_dict=None, config=None):
+        """将点云转化为voxel
+
+        Args:
+            data_dict (_type_, optional): _description_. Defaults to None.
+            config (_type_, optional): 该预处理操作的配置. Defaults to None.
+
+        Returns:
+            _type_: _description_
+        """
         # just calculate grid size
         if data_dict is None:
+            #* 根据点云范围和voxel_size求xyz轴上各有多少个voxel，记为grid_size
             grid_size = (self.point_cloud_range[3:6] - self.point_cloud_range[0:3]) / np.array(config.VOXEL_SIZE)
             self.grid_size = np.round(grid_size).astype(np.int64)
             self.voxel_size = config.VOXEL_SIZE
@@ -133,6 +209,9 @@ class DataProcessor(object):
 
         points = data_dict['points']
         voxel_output = self.voxel_generator.generate(points)
+        #* voxels: 非空voxel个数(不超过最大voxel个数) * voxel中最大点个数 * 点特征维度
+        #* coordinates: voxel的索引, 非空voxel个数 * 3, [zidx, yidx, xidx]
+        #* num_points: 非空voxel中的点个数(不超过voxel中最大点个数), 非空voxel个数
         voxels, coordinates, num_points = voxel_output
 
         if not data_dict['use_lead_xyz']:
@@ -141,6 +220,20 @@ class DataProcessor(object):
         data_dict['voxels'] = voxels
         data_dict['voxel_coords'] = coordinates
         data_dict['voxel_num_points'] = num_points
+        """
+        返回的data_dict
+            frame_id:帧id
+            gt_names:gt框的类别名
+            gt_boxes:gt框, [x,y,z,dx,dy,dz,heading]
+            points:点云
+            flip_x:是否绕着X轴进行翻转
+            noise_rot: 整片点云逆时针旋转的角度
+            noise_scale: 整片点云缩放的尺度
+            use_lead_xyz: 是否使用xyz数据
+            voxels: 非空voxel个数(不超过最大voxel个数) * voxel中最大点个数 * 点特征维度
+            coordinates: voxel的索引, 非空voxel个数 * 3, [zidx, yidx, xidx]
+            num_points: 非空voxel中的点个数(不超过voxel中最大点个数), 非空voxel个数
+        """
         return data_dict
 
     def sample_points(self, data_dict=None, config=None):

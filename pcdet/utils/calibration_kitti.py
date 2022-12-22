@@ -40,7 +40,7 @@ class Calibration(object):
         self.ty = self.P2[1, 3] / (-self.fv)
 
     def cart_to_hom(self, pts):
-        """
+        """将坐标转化为齐次坐标
         :param pts: (N, 3 or 2)
         :return pts_hom: (N, 4 or 3)
         """
@@ -48,7 +48,10 @@ class Calibration(object):
         return pts_hom
 
     def rect_to_lidar(self, pts_rect):
-        """
+        """坐标从rect坐标系转换到激光雷达坐标系
+        参考https://towardsdatascience.com/kitti-coordinate-transformations-125094cd42fb
+        [x, y, z, 1] * inverse(tranverse([R 0  * [V2C
+                                          0 1]    0 1]))
         :param pts_lidar: (N, 3)
         :return pts_rect: (N, 3)
         """
@@ -63,7 +66,8 @@ class Calibration(object):
         return pts_lidar[:, 0:3]
 
     def lidar_to_rect(self, pts_lidar):
-        """
+        """将lidar坐标系的点转到rect坐标系下
+        points * (tranverse([V2C]) * tranverse(R0))
         :param pts_lidar: (N, 3)
         :return pts_rect: (N, 3)
         """
@@ -73,13 +77,15 @@ class Calibration(object):
         return pts_rect
 
     def rect_to_img(self, pts_rect):
-        """
+        """将3D点从rect坐标系转到图像的2D点, P2也不能算是内参矩阵, 就是从rect坐标系到像素坐标系的投影矩阵
         :param pts_rect: (N, 3)
         :return pts_img: (N, 2)
         """
         pts_rect_hom = self.cart_to_hom(pts_rect)
         pts_2d_hom = np.dot(pts_rect_hom, self.P2.T)
+        #* 需要除以第2维才是真正的像素坐标
         pts_img = (pts_2d_hom[:, 0:2].T / pts_rect_hom[:, 2]).T  # (N, 2)
+        #! pts_rect_depth用来判断是否在相机前方
         pts_rect_depth = pts_2d_hom[:, 2] - self.P2.T[3, 2]  # depth in rect camera coord
         return pts_img, pts_rect_depth
 

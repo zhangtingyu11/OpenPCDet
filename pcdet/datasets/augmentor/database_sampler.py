@@ -14,6 +14,14 @@ from pcdet.datasets.kitti.kitti_object_eval_python import kitti_common
 
 class DataBaseSampler(object):
     def __init__(self, root_path, sampler_cfg, class_names, logger=None):
+        """初始化DataBaseSampler
+
+        Args:
+            root_path (_type_): 数据集的根目录
+            sampler_cfg (_type_): 采样的配置
+            class_names (_type_): 采样的类别
+            logger (_type_, optional): 日志
+        """
         self.root_path = root_path
         self.class_names = class_names
         self.sampler_cfg = sampler_cfg
@@ -29,6 +37,7 @@ class DataBaseSampler(object):
         self.use_shared_memory = sampler_cfg.get('USE_SHARED_MEMORY', False)
 
         for db_info_path in sampler_cfg.DB_INFO_PATH:
+            #* self.root_path是pathlib库中的路径，调用resolve函数可以补全成绝对路径
             db_info_path = self.root_path.resolve() / db_info_path
             if not db_info_path.exists():
                 assert len(sampler_cfg.DB_INFO_PATH) == 1
@@ -38,9 +47,22 @@ class DataBaseSampler(object):
                 sampler_cfg.NUM_POINT_FEATURES = sampler_cfg.BACKUP_DB_INFO['NUM_POINT_FEATURES']
 
             with open(str(db_info_path), 'rb') as f:
+                #* 读取gt数据库里面的数据，每个类别的名称作为key，对应的样本组成的列表作为value
+                #* 每个样本包含以下几个内容：
+                #* name:类别的名称， 例如'Pedestrian'
+                #* path:当前样本所在的点云文件， 例如'gt_database/000000_Pedestrian_0.bin'
+                #* image_idx:当前样本的图像的所以， 例如'000000'
+                #* gt_idx:当前样本是所在点云的第几个gt样本，例如2
+                #* box3d_lidar:lidar坐标系下的3D包围框[x,y,z,dx,dy,dz,heading]，
+                #*      例如array([23.79977226, -8.31220436, -0.48439828,  1.09,  0.72 , 1.96 , -3.32079633])
+                #* num_points_in_gt:样本包围框内的点数，例如383
+                #* difficulty:该包围框属于哪个难度，0为easy，1为moderate，2为hard， -1为三个之外
+                #* bbox:2D包围框[xmin, ymin, xmax, ymax]
+                #* score:置信度，默认是-1
                 infos = pickle.load(f)
+                #* self.db_infos存储对应类别的gt样本数据库, key是类别名，value是gt样本组成的列表
                 [self.db_infos[cur_class].extend(infos[cur_class]) for cur_class in class_names]
-
+        #* sampler_cfg.PREPARE里存放一些预处理操作， 比如过滤点数较少的样本
         for func_name, val in sampler_cfg.PREPARE.items():
             self.db_infos = getattr(self, func_name)(self.db_infos, val)
 
@@ -49,12 +71,18 @@ class DataBaseSampler(object):
         self.sample_groups = {}
         self.sample_class_num = {}
         self.limit_whole_scene = sampler_cfg.get('LIMIT_WHOLE_SCENE', False)
-
+        #* sampler_cfg.SAMPLE_GROUPS存储每个类别要采样多少个样本， 例如['Car:15', 'Pedestrian:15', 'Cyclist:15']
         for x in sampler_cfg.SAMPLE_GROUPS:
+            #* class_name是类别名， sample_num是该类别采样的样本数
             class_name, sample_num = x.split(':')
             if class_name not in class_names:
                 continue
+            #* self.sample_class_num的key是类别名，value是采样的样本数
             self.sample_class_num[class_name] = sample_num
+            #* self.sample_groups的key是类别名，value是一个字典，包含下列三个key
+            #*      sample_num:采样的样本数
+            #*      pointer: 这一轮采样中已经采样的样本数,第一次设为和数据库长度一样,可以在sample_with_fixed_number中打乱数据库
+            #*      indices: 数据库中的样本的索引排列
             self.sample_groups[class_name] = {
                 'sample_num': sample_num,
                 'pointer': len(self.db_infos[class_name]),
@@ -99,6 +127,15 @@ class DataBaseSampler(object):
         return sa_key
 
     def filter_by_difficulty(self, db_infos, removed_difficulty):
+        """过滤某些难度的样本
+
+        Args:
+            db_infos (_type_): 输入的gt样本数据库
+            removed_difficulty (_type_): 需要移除的样本难度的列表， 例如[-1]
+
+        Returns:
+            _type_: 新的gt样本数据库
+        """
         new_db_infos = {}
         for key, dinfos in db_infos.items():
             pre_len = len(dinfos)
@@ -111,7 +148,17 @@ class DataBaseSampler(object):
         return new_db_infos
 
     def filter_by_min_points(self, db_infos, min_gt_points_list):
+        """过滤点数少于阈值的样本
+
+        Args:
+            db_infos (_type_): gt sample的数据库
+            min_gt_points_list (_type_): 存储过滤的列表， 例如['Car:5', 'Pedestrian:5', 'Cyclist:5']
+
+        Returns:
+            _type_: 过滤后新的数据库
+        """
         for name_num in min_gt_points_list:
+            #* name是要过滤的类别， min_num是要过滤的点的阈值
             name, min_num = name_num.split(':')
             min_num = int(min_num)
             if min_num > 0 and name in db_infos.keys():
@@ -130,13 +177,17 @@ class DataBaseSampler(object):
     def sample_with_fixed_number(self, class_name, sample_group):
         """
         Args:
-            class_name:
+            class_name:类别名
             sample_group:
+                sample_num:采样的样本数
+                pointer: 这一轮采样中已经采样的样本数,第一次设为和数据库长度一样,可以在sample_with_fixed_number中打乱数据库
+                indices: 数据库中的样本的索引排列
         Returns:
 
         """
         sample_num, pointer, indices = int(sample_group['sample_num']), sample_group['pointer'], sample_group['indices']
         if pointer >= len(self.db_infos[class_name]):
+            #* 第一次进入或者每一次取够了样本数的样本后，就打乱顺序供重新选取
             indices = np.random.permutation(len(self.db_infos[class_name]))
             pointer = 0
 
@@ -152,17 +203,24 @@ class DataBaseSampler(object):
         Only validate in KITTIDataset
         Args:
             gt_boxes: (N, 7 + C) [x, y, z, dx, dy, dz, heading, ...]
-            road_planes: [a, b, c, d]
+            road_planes: [a, b, c, d], 道路的平面方程, ax+by+cz+d=0, [a,b,c,d]
             calib:
 
         Returns:
+            gt_boxes: 修正中心点Z坐标后的gt框
+            mv_height: 每个gt框修正的Z坐标的偏差
         """
         a, b, c, d = road_planes
+        #* 在相机坐标系下的包围框中心点坐标
         center_cam = calib.lidar_to_rect(gt_boxes[:, 0:3])
+        #* 计算相机中心点(底面中心点)的真实相机高度
         cur_height_cam = (-d - a * center_cam[:, 0] - c * center_cam[:, 2]) / b
         center_cam[:, 1] = cur_height_cam
+        #* 计算当前lidar坐标系下的中心点高度
         cur_lidar_height = calib.rect_to_lidar(center_cam)[:, 2]
+        #* 之前的中心点和现在中心点的偏差值
         mv_height = gt_boxes[:, 2] - gt_boxes[:, 5] / 2 - cur_lidar_height
+        #* 修正gt框的中心点z坐标
         gt_boxes[:, 2] -= mv_height  # lidar view
         return gt_boxes, mv_height
 
@@ -363,6 +421,25 @@ class DataBaseSampler(object):
         return data_dict
 
     def add_sampled_boxes_to_scene(self, data_dict, sampled_gt_boxes, total_valid_sampled_dict, mv_height=None, sampled_gt_boxes2d=None):
+        """将采样的gt框加进场景中
+
+        Args:
+            data_dict (_type_): 当前场景的数据信息
+                frame_id:帧id
+                calib:标定类
+                gt_names:gt框的类别名
+                gt_boxes:gt包围框信息
+                road_plane:道路的平面方程, ax+by+cz+d=0, [a,b,c,d]
+                points:点云
+                gt_boxes_mask:gt框的掩码, 在识别类别中则为True
+            sampled_gt_boxes (_type_): 采样的gt框数据
+            total_valid_sampled_dict (_type_): 采样的gt框的全部数据组成列表
+            mv_height (_type_, optional): _description_. Defaults to None.
+            sampled_gt_boxes2d (_type_, optional): _description_. Defaults to None.
+
+        Returns:
+            _type_: _description_
+        """
         gt_boxes_mask = data_dict['gt_boxes_mask']
         gt_boxes = data_dict['gt_boxes'][gt_boxes_mask]
         gt_names = data_dict['gt_names'][gt_boxes_mask]
@@ -398,10 +475,11 @@ class DataBaseSampler(object):
                     obj_points = np.fromfile(str(file_path), dtype=np.float64).reshape(-1, self.sampler_cfg.NUM_POINT_FEATURES)
 
             assert obj_points.shape[0] == info['num_points_in_gt']
+            #* obj_points原本存放的是以obj中心点为原点的点的坐标
             obj_points[:, :3] += info['box3d_lidar'][:3].astype(np.float32)
 
             if self.sampler_cfg.get('USE_ROAD_PLANE', False):
-                # mv height
+                #* 认定同一包围框内的点的高度偏移量是一致的
                 obj_points[:, 2] -= mv_height[idx]
 
             if self.img_aug_type is not None:
@@ -410,7 +488,7 @@ class DataBaseSampler(object):
                 )
 
             obj_points_list.append(obj_points)
-
+        #* 将添加的gt框的点拼接起来
         obj_points = np.concatenate(obj_points_list, axis=0)
         sampled_gt_names = np.array([x['name'] for x in total_valid_sampled_dict])
 
@@ -429,6 +507,7 @@ class DataBaseSampler(object):
         large_sampled_gt_boxes = box_utils.enlarge_box3d(
             sampled_gt_boxes[:, 0:7], extra_width=self.sampler_cfg.REMOVE_EXTRA_WIDTH
         )
+        #* 移除点云内的包围框的点
         points = box_utils.remove_points_in_boxes3d(points, large_sampled_gt_boxes)
         points = np.concatenate([obj_points[:, :points.shape[-1]], points], axis=0)
         gt_names = np.concatenate([gt_names, sampled_gt_names], axis=0)
@@ -439,7 +518,14 @@ class DataBaseSampler(object):
 
         if self.img_aug_type is not None:
             data_dict = self.copy_paste_to_image(img_aug_gt_dict, data_dict, points)
-
+        """
+        data_dict的返回值如下:
+            frame_id:帧id
+            gt_names:gt框的类别名
+            gt_boxes:gt框, [x,y,z,dx,dy,dz,heading]
+            points:点云
+            gt_boxes_mask:gt框的掩码, 在识别类别中则为True, 初始的gt_boxes_mask, 这里应该没啥用了
+        """
         return data_dict
 
     def __call__(self, data_dict):
@@ -458,21 +544,42 @@ class DataBaseSampler(object):
         sampled_mv_height = []
         sampled_gt_boxes2d = []
 
+        #* self.sample_groups的key是类别名，value是一个字典，字典包含下列三个key
+        #*      sample_num:采样的样本数
+        #*      pointer: 这一轮采样中已经采样的样本数,第一次设为和数据库长度一样,可以在sample_with_fixed_number中打乱数据库
+        #*      indices: 数据库中的样本的索引排列
         for class_name, sample_group in self.sample_groups.items():
             if self.limit_whole_scene:
                 num_gt = np.sum(class_name == gt_names)
                 sample_group['sample_num'] = str(int(self.sample_class_num[class_name]) - num_gt)
             if int(sample_group['sample_num']) > 0:
+                #* sampled_dict是采样的gt样本组成的列表
+                #* name:类别的名称， 例如'Pedestrian'
+                #* path:当前样本所在的点云文件， 例如'gt_database/000000_Pedestrian_0.bin'
+                #* image_idx:当前样本的图像的所以， 例如'000000'
+                #* gt_idx:当前样本是所在点云的第几个gt样本，例如2
+                #* box3d_lidar:lidar坐标系下的3D包围框[x,y,z,dx,dy,dz,heading]，
+                #*      例如array([23.79977226, -8.31220436, -0.48439828,  1.09,  0.72 , 1.96 , -3.32079633])
+                #* num_points_in_gt:样本包围框内的点数，例如383
+                #* difficulty:该包围框属于哪个难度，0为easy，1为moderate，2为hard， -1为三个之外
+                #* bbox:2D包围框[xmin, ymin, xmax, ymax]
+                #* score:置信度，默认是-1
                 sampled_dict = self.sample_with_fixed_number(class_name, sample_group)
 
+                #* 获取3D框np数组
                 sampled_boxes = np.stack([x['box3d_lidar'] for x in sampled_dict], axis=0).astype(np.float32)
 
                 assert not self.sampler_cfg.get('DATABASE_WITH_FAKELIDAR', False), 'Please use latest codes to generate GT_DATABASE'
-
+                
+                #* iou1是采样的包围框和原有的包围框的iou
                 iou1 = iou3d_nms_utils.boxes_bev_iou_cpu(sampled_boxes[:, 0:7], existed_boxes[:, 0:7])
+                #* iou2是采样的包围框和采样的包围框的iou
                 iou2 = iou3d_nms_utils.boxes_bev_iou_cpu(sampled_boxes[:, 0:7], sampled_boxes[:, 0:7])
+                #* 将对角线的位置都变为0
                 iou2[range(sampled_boxes.shape[0]), range(sampled_boxes.shape[0])] = 0
+                #* 可能会出现原有的gt框个数为0的情况
                 iou1 = iou1 if iou1.shape[1] > 0 else iou2
+                #* 求出有效的添加的包围框的mask
                 valid_mask = ((iou1.max(axis=1) + iou2.max(axis=1)) == 0)
 
                 if self.img_aug_type is not None:
@@ -480,11 +587,14 @@ class DataBaseSampler(object):
                     sampled_gt_boxes2d.append(sampled_boxes2d)
                     if mv_height is not None:
                         sampled_mv_height.append(mv_height)
-
+                
                 valid_mask = valid_mask.nonzero()[0]
+                #* 有效的采样的gt框的标注信息
                 valid_sampled_dict = [sampled_dict[x] for x in valid_mask]
+                #* 有效的采样的gt框
                 valid_sampled_boxes = sampled_boxes[valid_mask]
 
+                #* 拓展现有的gt框
                 existed_boxes = np.concatenate((existed_boxes, valid_sampled_boxes[:, :existed_boxes.shape[-1]]), axis=0)
                 total_valid_sampled_dict.extend(valid_sampled_dict)
 
@@ -499,4 +609,11 @@ class DataBaseSampler(object):
             )
 
         data_dict.pop('gt_boxes_mask')
+        """
+        data_dict的返回值如下:
+            frame_id:帧id
+            gt_names:gt框的类别名
+            gt_boxes:gt框, [x,y,z,dx,dy,dz,heading]
+            points:点云
+        """
         return data_dict

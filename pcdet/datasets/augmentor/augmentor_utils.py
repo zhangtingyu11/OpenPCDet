@@ -6,7 +6,7 @@ from ...utils import box_utils
 
 
 def random_flip_along_x(gt_boxes, points, return_flip=False, enable=None):
-    """
+    """沿着x轴进行翻转, 即y坐标变为相反数, 航向角也变为相反数, 其中点云的点的y坐标也要变为相反数
     Args:
         gt_boxes: (N, 7 + C), [x, y, z, dx, dy, dz, heading, [vx], [vy]]
         points: (M, 3 + C)
@@ -48,7 +48,7 @@ def random_flip_along_y(gt_boxes, points, return_flip=False, enable=None):
 
 
 def global_rotation(gt_boxes, points, rot_range, return_rot=False, noise_rotation=None):
-    """
+    """将整片点云逆时针旋转一定角度
     Args:
         gt_boxes: (N, 7 + C), [x, y, z, dx, dy, dz, heading, [vx], [vy]]
         points: (M, 3 + C),
@@ -79,9 +79,11 @@ def global_scaling(gt_boxes, points, scale_range, return_scale=False):
         scale_range: [min, max]
     Returns:
     """
+    #* scale_range太小直接忽略
     if scale_range[1] - scale_range[0] < 1e-3:
         return gt_boxes, points
     noise_scale = np.random.uniform(scale_range[0], scale_range[1])
+    #* 点云的点坐标和包围框都要进行缩放
     points[:, :3] *= noise_scale
     gt_boxes[:, :6] *= noise_scale
     if gt_boxes.shape[1] > 7:

@@ -132,7 +132,7 @@ def remove_points_in_boxes3d(points, boxes3d):
 
 
 def boxes3d_kitti_camera_to_lidar(boxes3d_camera, calib):
-    """
+    """将包围框从相机坐标系转换到激光雷达坐标系
     Args:
         boxes3d_camera: (N, 7) [x, y, z, l, h, w, r] in rect camera coords
         calib:
@@ -145,7 +145,9 @@ def boxes3d_kitti_camera_to_lidar(boxes3d_camera, calib):
     xyz_camera, r = boxes3d_camera_copy[:, 0:3], boxes3d_camera_copy[:, 6:7]
     l, h, w = boxes3d_camera_copy[:, 3:4], boxes3d_camera_copy[:, 4:5], boxes3d_camera_copy[:, 5:6]
 
+    #* label是在rect坐标系下的， 将label转到lidar坐标系下
     xyz_lidar = calib.rect_to_lidar(xyz_camera)
+    #* kitti的相机坐标系中心点是底面中心点，lidar坐标系中心点是真的中心点
     xyz_lidar[:, 2] += h[:, 0] / 2
     return np.concatenate([xyz_lidar, l, w, h, -(r + np.pi / 2)], axis=-1)
 

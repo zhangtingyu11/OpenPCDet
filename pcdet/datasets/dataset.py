@@ -34,8 +34,9 @@ class DatasetTemplate(torch_data.Dataset):
             self.dataset_cfg.DATA_PROCESSOR, point_cloud_range=self.point_cloud_range,
             training=self.training, num_point_features=self.point_feature_encoder.num_point_features
         )
-
+        #* grid_size为xyz轴上各有多少个voxel
         self.grid_size = self.data_processor.grid_size
+        #* voxel_size是每个voxel的大小
         self.voxel_size = self.data_processor.voxel_size
         self.total_epochs = 0
         self._merge_all_iters_to_one_epoch = False
@@ -141,10 +142,12 @@ class DatasetTemplate(torch_data.Dataset):
 
         Returns:
             data_dict:
-                frame_id: string
-                points: (N, 3 + C_in)
-                gt_boxes: optional, (N, 7 + C) [x, y, z, dx, dy, dz, heading, ...]
-                gt_names: optional, (N), string
+                frame_id: 输入的帧id
+                points: (N, 3 + 1)
+                calib: calib类
+                road_plane: (4), 地面的法向量, 
+                gt_boxes: optional, (N, 7) [x, y, z, dx, dy, dz, heading, ...], gt包围框
+                gt_names: optional, (N), string, gt样本的类别名
                 use_lead_xyz: bool
                 voxels: optional (num_voxels, max_points_per_voxel, 3 + C)
                 voxel_coords: optional (num_voxels, 3)
@@ -153,6 +156,7 @@ class DatasetTemplate(torch_data.Dataset):
         """
         if self.training:
             assert 'gt_boxes' in data_dict, 'gt_boxes should be provided for training'
+            #* 有效的gt框的掩码
             gt_boxes_mask = np.array([n in self.class_names for n in data_dict['gt_names']], dtype=np.bool_)
             
             if 'calib' in data_dict:
@@ -166,10 +170,13 @@ class DatasetTemplate(torch_data.Dataset):
             if 'calib' in data_dict:
                 data_dict['calib'] = calib
         if data_dict.get('gt_boxes', None) is not None:
+            #* 保留self.class_names的类别，正常情况应该是全保留的，因为之前没加入别的类别
             selected = common_utils.keep_arrays_by_name(data_dict['gt_names'], self.class_names)
             data_dict['gt_boxes'] = data_dict['gt_boxes'][selected]
             data_dict['gt_names'] = data_dict['gt_names'][selected]
+            #* 将类别转化为序号, Car是1, Pedestrian是2, CycList是3
             gt_classes = np.array([self.class_names.index(n) + 1 for n in data_dict['gt_names']], dtype=np.int32)
+            #* 将gt包围框从[x,y,z,dx,dy,dz,heading]变为[x,y,z,dx,dy,dz,heading,类别序号]
             gt_boxes = np.concatenate((data_dict['gt_boxes'], gt_classes.reshape(-1, 1).astype(np.float32)), axis=1)
             data_dict['gt_boxes'] = gt_boxes
 
@@ -188,7 +195,19 @@ class DatasetTemplate(torch_data.Dataset):
             return self.__getitem__(new_index)
 
         data_dict.pop('gt_names', None)
-
+        """
+        返回的data_dict
+            frame_id:帧id
+            gt_boxes:gt框, [x,y,z,dx,dy,dz,heading]
+            points:点云
+            flip_x:是否绕着X轴进行翻转
+            noise_rot: 整片点云逆时针旋转的角度
+            noise_scale: 整片点云缩放的尺度
+            use_lead_xyz: 是否使用xyz数据
+            voxels: 非空voxel个数(不超过最大voxel个数) * voxel中最大点个数 * 点特征维度
+            coordinates: voxel的索引, 非空voxel个数 * 3, [zidx, yidx, xidx]
+            num_points: 非空voxel中的点个数(不超过voxel中最大点个数), 非空voxel个数
+        """
         return data_dict
 
     @staticmethod
@@ -203,14 +222,17 @@ class DatasetTemplate(torch_data.Dataset):
         for key, val in data_dict.items():
             try:
                 if key in ['voxels', 'voxel_num_points']:
+                    #* 因为voxel_coords记录了batch索引，所以这边就不记录了
                     ret[key] = np.concatenate(val, axis=0)
                 elif key in ['points', 'voxel_coords']:
+                    #* 在点或者voxel坐标的第0维加上batch索引
                     coors = []
                     for i, coor in enumerate(val):
                         coor_pad = np.pad(coor, ((0, 0), (1, 0)), mode='constant', constant_values=i)
                         coors.append(coor_pad)
                     ret[key] = np.concatenate(coors, axis=0)
                 elif key in ['gt_boxes']:
+                    #* 将gt框放在同一个batch中时，创建batch_size * batch中最大的包围框个数 * 8的0张量，不足的补0
                     max_gt = max([len(x) for x in val])
                     batch_gt_boxes3d = np.zeros((batch_size, max_gt, val[0].shape[-1]), dtype=np.float32)
                     for k in range(batch_size):
@@ -288,4 +310,19 @@ class DatasetTemplate(torch_data.Dataset):
                 raise TypeError
 
         ret['batch_size'] = batch_size
+        """
+        返回的ret:
+            frame_id:帧id
+            gt_boxes:gt框, [x,y,z,dx,dy,dz,heading]
+            points:点云
+            flip_x:是否绕着X轴进行翻转
+            noise_rot: 整片点云逆时针旋转的角度
+            noise_scale: 整片点云缩放的尺度
+            use_lead_xyz: 是否使用xyz数据
+            voxels: 非空voxel个数(不超过最大voxel个数) * voxel中最大点个数 * 点特征维度
+            coordinates: voxel的索引, 非空voxel个数 * 3, [zidx, yidx, xidx]
+            num_points: 非空voxel中的点个数(不超过voxel中最大点个数), 非空voxel个数
+            image_shape: 图像尺寸
+            batch_size: batch_size
+        """
         return ret
