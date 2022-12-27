@@ -15,6 +15,15 @@ class AnchorGenerator(object):
         self.num_of_anchor_sets = len(self.anchor_sizes)
 
     def generate_anchors(self, grid_sizes):
+        """生成anchor
+
+        Args:
+            grid_sizes (_type_): xyz轴上的voxel个数
+
+        Returns:
+            all_anchors: anchor列表, 列表中每一类元素表示那一类的anchor
+            num_anchors_per_location: 每个位置生成的anchor个数, list, 列表中每个元素表示这个类别生成的anchor个数
+        """
         assert len(grid_sizes) == self.num_of_anchor_sets
         all_anchors = []
         num_anchors_per_location = []
@@ -27,6 +36,7 @@ class AnchorGenerator(object):
                 y_stride = (self.anchor_range[4] - self.anchor_range[1]) / grid_size[1]
                 x_offset, y_offset = x_stride / 2, y_stride / 2
             else:
+                #* 除以grid[0]-1 是为了使生成的anchor个数和feature map的尺寸一致
                 x_stride = (self.anchor_range[3] - self.anchor_range[0]) / (grid_size[0] - 1)
                 y_stride = (self.anchor_range[4] - self.anchor_range[1]) / (grid_size[1] - 1)
                 x_offset, y_offset = 0, 0
@@ -45,16 +55,24 @@ class AnchorGenerator(object):
             x_shifts, y_shifts, z_shifts = torch.meshgrid([
                 x_shifts, y_shifts, z_shifts
             ])  # [x_grid, y_grid, z_grid]
+            #* anchors的shape为[216, 248, 1, 3]
             anchors = torch.stack((x_shifts, y_shifts, z_shifts), dim=-1)  # [x, y, z, 3]
+            #* anchors的shape为[216, 248, 1, anchor_size.shape[0], 3]
             anchors = anchors[:, :, :, None, :].repeat(1, 1, 1, anchor_size.shape[0], 1)
+            #* anchor_size的shape为[216, 248, 1, anchor_size.shape[0], 3]
             anchor_size = anchor_size.view(1, 1, 1, -1, 3).repeat([*anchors.shape[0:3], 1, 1])
+            #* anchors的shape为[216, 248, 1, anchor_size.shape[0], 6]
             anchors = torch.cat((anchors, anchor_size), dim=-1)
+            #* anchors的shape为[216, 248, 1, anchor_size.shape[0], num_anchor_rotation， 6]
             anchors = anchors[:, :, :, :, None, :].repeat(1, 1, 1, 1, num_anchor_rotation, 1)
+            #* anchor_rotation的shape为[216, 248, 1, anchor_size.shape[0], num_anchor_rotation， 1]
             anchor_rotation = anchor_rotation.view(1, 1, 1, 1, -1, 1).repeat([*anchors.shape[0:3], num_anchor_size, 1, 1])
+            #* anchors的shape为[216, 248, 1, anchor_size.shape[0], num_anchor_rotation， 7], 这边的7维就是[x,y,z,dx,dy,dz,heading]
             anchors = torch.cat((anchors, anchor_rotation), dim=-1)  # [x, y, z, num_size, num_rot, 7]
 
             anchors = anchors.permute(2, 1, 0, 3, 4, 5).contiguous()
             #anchors = anchors.view(-1, anchors.shape[-1])
+            #* 之前z坐标是底部的高度，现在加上高的一半，变成中心点高度
             anchors[..., 2] += anchors[..., 5] / 2  # shift to box centers
             all_anchors.append(anchors)
         return all_anchors, num_anchors_per_location

@@ -314,15 +314,18 @@ def boxes_iou_normal(boxes_a, boxes_b):
 
 
 def boxes3d_lidar_to_aligned_bev_boxes(boxes3d):
-    """
+    """返回和坐标轴平齐的BEV包围框(不考虑航向角)
     Args:
         boxes3d: (N, 7 + C) [x, y, z, dx, dy, dz, heading] in lidar coordinate
 
     Returns:
         aligned_bev_boxes: (N, 4) [x1, y1, x2, y2] in the above lidar coordinate
     """
+    #* 将航向角转化为0 ~ pi/2
     rot_angle = common_utils.limit_period(boxes3d[:, 6], offset=0.5, period=np.pi).abs()
+    #* 如果角度小于pi/4, 说明车头偏向朝前, 否则车头偏向朝左, 需要根绝不同情况，决定左上角和右下角bev包围框的位置
     choose_dims = torch.where(rot_angle[:, None] < np.pi / 4, boxes3d[:, [3, 4]], boxes3d[:, [4, 3]])
+    #* aligned_bev_boxes为[anchor个数, 4], [x_bottom, y_right, x_up, y_left]
     aligned_bev_boxes = torch.cat((boxes3d[:, 0:2] - choose_dims / 2, boxes3d[:, 0:2] + choose_dims / 2), dim=1)
     return aligned_bev_boxes
 

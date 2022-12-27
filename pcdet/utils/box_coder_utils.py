@@ -4,6 +4,12 @@ import torch
 
 class ResidualCoder(object):
     def __init__(self, code_size=7, encode_angle_by_sincos=False, **kwargs):
+        """初始化ResidualCoder
+
+        Args:
+            code_size (int, optional): 用多少维度表示包围框. Defaults to 7.
+            encode_angle_by_sincos (bool, optional): 是否使用sin和cos来表示航向角. Defaults to False.
+        """
         super().__init__()
         self.code_size = code_size
         self.encode_angle_by_sincos = encode_angle_by_sincos

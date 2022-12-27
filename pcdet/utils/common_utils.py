@@ -19,7 +19,7 @@ def check_numpy_to_torch(x):
 
 
 def limit_period(val, offset=0.5, period=np.pi):
-    """将数值转换到-peroid*offset ~ peroid*offset
+    """将数值转换到-peroid*offset ~ peroid*(1-offset)
 
     Args:
         val (_type_): _description_

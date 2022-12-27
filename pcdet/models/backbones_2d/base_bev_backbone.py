@@ -5,6 +5,17 @@ import torch.nn as nn
 
 class BaseBEVBackbone(nn.Module):
     def __init__(self, model_cfg, input_channels):
+        """初始化BaseBEVBackbone
+
+        Args:
+            model_cfg (_type_): 模型配置
+                LAYER_NUMS: 每个block中的中心层的个数, 中间层的前面会有一层进行特征维度的变换(记为起始层, 在起始层做特征变换和尺寸变化)
+                LAYER_STRIDES: 起始层的步长
+                NUM_FILTERS: 每个block的输出特征维度
+                UPSAMPLE_STRIDES: 上采样的步长
+                NUM_UPSAMPLE_FILTERS: 上采样的输出通道数
+            input_channels (_type_): 输入通道数
+        """
         super().__init__()
         self.model_cfg = model_cfg
 
@@ -24,10 +35,17 @@ class BaseBEVBackbone(nn.Module):
             upsample_strides = num_upsample_filters = []
 
         num_levels = len(layer_nums)
+        #* 输入通道数的列表
         c_in_list = [input_channels, *num_filters[:-1]]
         self.blocks = nn.ModuleList()
         self.deblocks = nn.ModuleList()
         for idx in range(num_levels):
+            """self.blocks的网络如下:
+            对于第i个block:
+                起始层:做特征变化, stride为LAYER_STRIDES[i], 输出通道数NUM_FILTERS[i] 
+                        Conv2d -> BN2d -> ReLU
+                中间层: (Conv2d -> BN2d -> ReLU) * LAYER_NUMS[i]
+            """
             cur_layers = [
                 nn.ZeroPad2d(1),
                 nn.Conv2d(
@@ -45,6 +63,12 @@ class BaseBEVBackbone(nn.Module):
                 ])
             self.blocks.append(nn.Sequential(*cur_layers))
             if len(upsample_strides) > 0:
+                """self.deblocks的网络如下:
+                    对于第i个deblock:
+                        做特征变化, stride为UPSAMPLE_STRIDES[i], 输入通道数为NUM_FILTERS[i], 输出通道数为NUM_UPSAMPLE_FILTERS[i]
+                                  kernel_size和stride一致
+                                deConv2d(如果stride是1, 就是Conv2d) -> BN2d -> ReLU
+                """
                 stride = upsample_strides[idx]
                 if stride >= 1:
                     self.deblocks.append(nn.Sequential(
@@ -80,9 +104,24 @@ class BaseBEVBackbone(nn.Module):
 
     def forward(self, data_dict):
         """
+            blocks进行尺寸缩放, 每次缩放完后特征都要放大两倍, 然后通过deblock还原成原图尺寸
+            最后将所有deblock的输出进行拼接
         Args:
             data_dict:
-                spatial_features
+                frame_id:帧id
+                gt_boxes:gt框, [x,y,z,dx,dy,dz,heading]
+                points:点云
+                flip_x:是否绕着X轴进行翻转
+                noise_rot: 整片点云逆时针旋转的角度
+                noise_scale: 整片点云缩放的尺度
+                use_lead_xyz: 是否使用xyz数据
+                voxels: 非空voxel个数(不超过最大voxel个数) * voxel中最大点个数 * 点特征维度
+                voxel_coods: voxel的索引, 非空voxel个数 * 4, [zidx, yidx, xidx, batch_idx]
+                voxel_num_points: 非空voxel中的点个数(不超过voxel中最大点个数), 非空voxel个数
+                image_shape: 图像尺寸
+                batch_size: batch_size
+                pillar_features: 非空voxel个数 * 特征维度的voxel特征
+                spatial_features: BEV特征图, batch_size * 特征维度 * H * W
         Returns:
         """
         spatial_features = data_dict['spatial_features']
@@ -108,7 +147,25 @@ class BaseBEVBackbone(nn.Module):
             x = self.deblocks[-1](x)
 
         data_dict['spatial_features_2d'] = x
-
+        """
+        Returns:
+        data_dict:
+            frame_id:帧id
+            gt_boxes:gt框, [x,y,z,dx,dy,dz,heading]
+            points:点云
+            flip_x:是否绕着X轴进行翻转
+            noise_rot: 整片点云逆时针旋转的角度
+            noise_scale: 整片点云缩放的尺度
+            use_lead_xyz: 是否使用xyz数据
+            voxels: 非空voxel个数(不超过最大voxel个数) * voxel中最大点个数 * 点特征维度
+            voxel_coods: voxel的索引, 非空voxel个数 * 4, [zidx, yidx, xidx, batch_idx]
+            voxel_num_points: 非空voxel中的点个数(不超过voxel中最大点个数), 非空voxel个数
+            image_shape: 图像尺寸
+            batch_size: batch_size
+            pillar_features: 非空voxel个数 * 特征维度的voxel特征
+            spatial_features: BEV特征图, batch_size * 特征维度 * H * W
+            spatial_features_2d: 骨干网络输出的二维特征图
+        """
         return data_dict
 
 
