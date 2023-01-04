@@ -246,6 +246,7 @@ class DataProcessor(object):
 
         points = data_dict['points']
         if num_points < len(points):
+            #* 如果点云数量大于要采样的点数, 那么超过40m的点全部取, 40m以内的点随机取
             pts_depth = np.linalg.norm(points[:, 0:3], axis=1)
             pts_near_flag = pts_depth < 40.0
             far_idxs_choice = np.where(pts_near_flag == 0)[0]
@@ -260,6 +261,7 @@ class DataProcessor(object):
                 choice = np.random.choice(choice, num_points, replace=False)
             np.random.shuffle(choice)
         else:
+            #* 如果点云数量小于要采样的点数, 那么在点云里随机采样一些点来补全
             choice = np.arange(0, len(points), dtype=np.int32)
             if num_points > len(points):
                 extra_choice = np.random.choice(choice, num_points - len(points), replace=False)

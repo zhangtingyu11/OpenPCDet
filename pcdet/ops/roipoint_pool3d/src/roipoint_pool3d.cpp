@@ -19,7 +19,16 @@
 void roipool3dLauncher(int batch_size, int pts_num, int boxes_num, int feature_in_len, int sampled_pts_num,
                        const float *xyz, const float *boxes3d, const float *pts_feature, float *pooled_features, int *pooled_empty_flag);
 
-
+/**
+ * @brief 
+ * 
+ * @param xyz 点的坐标:(B, N, 3)
+ * @param boxes3d roi包围框: (B, roi个数, 7), [x, y, z, dx, dy, dz, heading]
+ * @param pts_feature 点的特征: (B, N, C)
+ * @param pooled_features (B, roi个数, 每个roi内的采样点数, C+3)
+ * @param pooled_empty_flag (B, roi个数)
+ * @return int 
+ */
 int roipool3d_gpu(at::Tensor xyz, at::Tensor boxes3d, at::Tensor pts_feature, at::Tensor pooled_features, at::Tensor pooled_empty_flag){
     // params xyz: (B, N, 3)
     // params boxes3d: (B, M, 7)

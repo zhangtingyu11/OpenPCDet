@@ -16,6 +16,19 @@
                 "--cfg_file",
                 "cfgs/kitti_models/pointpillar.yaml"
             ]
+        },
+        {
+            "name": "Train PointRCNN",
+            "type": "python",
+            "request": "launch",
+            "program": "train.py",
+            "cwd": "${workspaceFolder}/tools",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--cfg_file",
+                "cfgs/kitti_models/pointrcnn.yaml"
+            ]
         }
     ]
 }

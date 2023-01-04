@@ -34,7 +34,17 @@ __device__ inline int check_pt_in_box3d(const float *pt, const float *box3d, flo
     return in_flag;
 }
 
-
+/**
+ * @brief 将点赋给包围框
+ * 
+ * @param batch_size 
+ * @param pts_num 点云数量
+ * @param boxes_num roi数量
+ * @param xyz 点的坐标:(B, N, 3)
+ * @param boxes3d roi包围框: (B, roi个数, 7), [x, y, z, dx, dy, dz, heading]
+ * @param pts_assign (batch_size, N, M), 表明这个点在不在这个包围框内, 0表示不在这个包围框内， 1表示在这个包围框内
+ * @return __global__ 
+ */
 __global__ void assign_pts_to_box3d(int batch_size, int pts_num, int boxes_num, const float *xyz, const float *boxes3d, int *pts_assign){
     // params xyz: (B, N, 3)
     // params boxes3d: (B, M, 7)
@@ -59,7 +69,18 @@ __global__ void assign_pts_to_box3d(int batch_size, int pts_num, int boxes_num, 
     // printf("bs=%d, pt=%d, in=%d\n", bs_idx, pt_idx, pts_assign[bs_idx * pts_num + pt_idx]);
 }
 
-
+/**
+ * @brief Get the pooled idx object
+ * 
+ * @param batch_size 
+ * @param pts_num 点云数量
+ * @param boxes_num roi数量
+ * @param sampled_pts_num roi中采样的点数
+ * @param pts_assign (B, 点云数量, roi数量), 1表示该点在这个roi中, 0表示该点不在这个roi中
+ * @param pts_idx (B, roi数量, roi中采样的点数), 记录roi中使用的点的索引, 如果不足roi中采样的点数, 就自己duplicate
+ * @param pooled_empty_flag (B, roi个数), 如果这个roi中没有点则为1, 否则为0
+ * @return __global__ 
+ */
 __global__ void get_pooled_idx(int batch_size, int pts_num, int boxes_num, int sampled_pts_num,
                                const int *pts_assign, int *pts_idx, int *pooled_empty_flag){
     // params xyz: (B, N, 3)
@@ -99,7 +120,21 @@ __global__ void get_pooled_idx(int batch_size, int pts_num, int boxes_num, int s
     }
 }
 
-
+/**
+ * @brief 
+ * 
+ * @param batch_size 
+ * @param pts_num 点云数量
+ * @param boxes_num roi数量
+ * @param feature_in_len 点云的特征维度
+ * @param sampled_pts_num 每个roi中采样的点云数
+ * @param xyz xyz 点的坐标:(B, N, 3)
+ * @param pts_idx (B, roi数量, roi中采样的点数), 记录roi中使用的点的索引, 如果不足roi中采样的点数, 就自己duplicate
+ * @param pts_feature 点的特征: (B, N, C)
+ * @param pooled_features (B, roi个数, 每个roi内的采样点数, C+3)
+ * @param pooled_empty_flag (B, roi个数), 如果这个roi中没有点则为1, 否则为0
+ * @return __global__ 
+ */
 __global__ void roipool3d_forward(int batch_size, int pts_num, int boxes_num, int feature_in_len, int sampled_pts_num,
                                    const float *xyz, const int *pts_idx, const float *pts_feature,
                                    float *pooled_features, int *pooled_empty_flag){
@@ -133,7 +168,20 @@ __global__ void roipool3d_forward(int batch_size, int pts_num, int boxes_num, in
         pooled_features[dst_feature_offset + 3 + j] = pts_feature[src_feature_offset + j];
 }
 
-
+/**
+ * @brief 
+ * 
+ * @param batch_size 
+ * @param pts_num 点云个数
+ * @param boxes_num roi个数
+ * @param feature_in_len 点云的特征数
+ * @param sampled_pts_num 每个roi中采样的点数
+ * @param xyz 点的坐标:(B, N, 3)
+ * @param boxes3d roi包围框: (B, roi个数, 7), [x, y, z, dx, dy, dz, heading]
+ * @param pts_feature 点的特征: (B, N, C)
+ * @param pooled_features (B, roi个数, 每个roi内的采样点数, C+3)
+ * @param pooled_empty_flag (B, roi个数)
+ */
 void roipool3dLauncher(int batch_size, int pts_num, int boxes_num, int feature_in_len, int sampled_pts_num,
                        const float *xyz, const float *boxes3d, const float *pts_feature, float *pooled_features, int *pooled_empty_flag){
 

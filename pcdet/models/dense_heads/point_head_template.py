@@ -34,6 +34,20 @@ class PointHeadTemplate(nn.Module):
 
     @staticmethod
     def make_fc_layers(fc_cfg, input_channels, output_channels):
+        """搭建fc层
+        linear bn relu
+        linear bn relu
+        ...
+        linear
+
+        Args:
+            fc_cfg (_type_): 隐藏层
+            input_channels (_type_): 输入通道数
+            output_channels (_type_): 输出通道数
+
+        Returns:
+            _type_: 搭建的隐藏层
+        """
         fc_layers = []
         c_in = input_channels
         for k in range(0, fc_cfg.__len__()):
@@ -77,13 +91,17 @@ class PointHeadTemplate(nn.Module):
         point_part_labels = gt_boxes.new_zeros((points.shape[0], 3)) if ret_part_labels else None
         for k in range(batch_size):
             bs_mask = (bs_idx == k)
+            #* points_single为单个样本的点云的坐标
             points_single = points[bs_mask][:, 1:4]
             point_cls_labels_single = point_cls_labels.new_zeros(bs_mask.sum())
+            #* box_idxs_of_pts为每个点所在box的索引, 如果不在任何一个包围框内, 则索引是-1
             box_idxs_of_pts = roiaware_pool3d_utils.points_in_boxes_gpu(
                 points_single.unsqueeze(dim=0), gt_boxes[k:k + 1, :, 0:7].contiguous()
             ).long().squeeze(dim=0)
+            #* 在包围框内的点是前景点
             box_fg_flag = (box_idxs_of_pts >= 0)
             if set_ignore_flag:
+                #* 不在gt包围框内的点, 但是在放大后的gt框内的点的标签为-1, 表示忽略
                 extend_box_idxs_of_pts = roiaware_pool3d_utils.points_in_boxes_gpu(
                     points_single.unsqueeze(dim=0), extend_gt_boxes[k:k+1, :, 0:7].contiguous()
                 ).long().squeeze(dim=0)
@@ -97,13 +115,15 @@ class PointHeadTemplate(nn.Module):
                 fg_flag = box_fg_flag & ball_flag
             else:
                 raise NotImplementedError
-
+            
+            #* 前景点的类别标签为其所在的包围框的标签, 不在放大后的gt框的点的标签是背景点, 为0
             gt_box_of_fg_points = gt_boxes[k][box_idxs_of_pts[fg_flag]]
             point_cls_labels_single[fg_flag] = 1 if self.num_class == 1 else gt_box_of_fg_points[:, -1].long()
             point_cls_labels[bs_mask] = point_cls_labels_single
 
             if ret_box_labels and gt_box_of_fg_points.shape[0] > 0:
                 point_box_labels_single = point_box_labels.new_zeros((bs_mask.sum(), 8))
+                #* regression target
                 fg_point_box_labels = self.box_coder.encode_torch(
                     gt_boxes=gt_box_of_fg_points[:, :-1], points=points_single[fg_flag],
                     gt_classes=gt_box_of_fg_points[:, -1].long()
@@ -126,16 +146,27 @@ class PointHeadTemplate(nn.Module):
             'point_box_labels': point_box_labels,
             'point_part_labels': point_part_labels
         }
+        """
+        Returns:
+            targets_dict: 
+                point_cls_labels: [batch_size*N], 0是背景点, >0是前景点, -1是忽略的点
+                point_box_labels: [batch_size*N, 8], 点对应的包围框的label, 只针对前景点, 其他点的label都为0
+                point_part_labels: None
+        """
         return targets_dict
 
     def get_cls_layer_loss(self, tb_dict=None):
+        #* point_cls_labels: [B*N], 0是背景, -1是忽略的点, 1,2,3分别代表车, 行人, 非机动车
         point_cls_labels = self.forward_ret_dict['point_cls_labels'].view(-1)
+        #* point_cls_preds: [B*N, 3], 分别代表车, 行人, 非机动车的概率
         point_cls_preds = self.forward_ret_dict['point_cls_preds'].view(-1, self.num_class)
 
         positives = (point_cls_labels > 0)
         negative_cls_weights = (point_cls_labels == 0) * 1.0
+        #* 只计算前景和背景点的分类loss, 不计算忽略点的分类loss
         cls_weights = (negative_cls_weights + 1.0 * positives).float()
         pos_normalizer = positives.sum(dim=0).float()
+        #* 点的分类loss需要除以前景点的个数， 也就是前景点越多越好
         cls_weights /= torch.clamp(pos_normalizer, min=1.0)
 
         one_hot_targets = point_cls_preds.new_zeros(*list(point_cls_labels.shape), self.num_class + 1)
@@ -170,10 +201,14 @@ class PointHeadTemplate(nn.Module):
         return point_loss_part, tb_dict
 
     def get_box_layer_loss(self, tb_dict=None):
+        #* 前景点的mask
         pos_mask = self.forward_ret_dict['point_cls_labels'] > 0
+        #* 标签[B*N, 8], [x, y, z, dx, dy, dz, cosa, sina], 不在包围框内的点的标签全是0
         point_box_labels = self.forward_ret_dict['point_box_labels']
+        #* 包围框的预测值[B*N, 8], [x, y, z, dx, dy, dz, cosa, sina]
         point_box_preds = self.forward_ret_dict['point_box_preds']
 
+        #* 只对前景点求regression loss, 并且regression loss要除以前景点的个数
         reg_weights = pos_mask.float()
         pos_normalizer = pos_mask.sum().float()
         reg_weights /= torch.clamp(pos_normalizer, min=1.0)

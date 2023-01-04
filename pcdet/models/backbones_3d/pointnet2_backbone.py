@@ -8,6 +8,18 @@ from ...ops.pointnet2.pointnet2_stack import pointnet2_utils as pointnet2_utils_
 
 class PointNet2MSG(nn.Module):
     def __init__(self, model_cfg, input_channels, **kwargs):
+        """初始化PointNet2MSG
+
+        Args:
+            model_cfg (_type_): 模型配置
+                FP_MLPS: feature propogation layer中的MLP的配置
+                SA_CONFIG: set abstraction layer的配置
+                    NPOINTS: 采样的点数
+                    RADIUS: 采样半径
+                    NSAMPLE: 每个采样半径里面的采样点数
+                    MLPS: ball query中的MLP的隐藏层
+            input_channels (_type_): 输入通道数
+        """
         super().__init__()
         self.model_cfg = model_cfg
 
@@ -79,6 +91,7 @@ class PointNet2MSG(nn.Module):
 
         l_xyz, l_features = [xyz], [features]
         for i in range(len(self.SA_modules)):
+            #* li_xyz是采样点的坐标, li_features是采样点的特征
             li_xyz, li_features = self.SA_modules[i](l_xyz[i], l_features[i])
             l_xyz.append(li_xyz)
             l_features.append(li_features)
@@ -91,6 +104,21 @@ class PointNet2MSG(nn.Module):
         point_features = l_features[0].permute(0, 2, 1).contiguous()  # (B, N, C)
         batch_dict['point_features'] = point_features.view(-1, point_features.shape[-1])
         batch_dict['point_coords'] = torch.cat((batch_idx[:, None].float(), l_xyz[0].view(-1, 3)), dim=1)
+        """
+        Returns:
+            batch_dict: 
+                frame_id:帧id
+                gt_boxes:gt框, [x,y,z,dx,dy,dz,heading]
+                points:点云
+                flip_x:是否绕着X轴进行翻转
+                noise_rot: 整片点云逆时针旋转的角度
+                noise_scale: 整片点云缩放的尺度
+                use_lead_xyz: 是否使用xyz数据
+                image_shape: 图像尺寸
+                batch_size: batch_size
+                points_features: (B*N, C)的点特征
+                points_coords: (B*N, 4)的batch_idx + 点坐标
+        """
         return batch_dict
 
 

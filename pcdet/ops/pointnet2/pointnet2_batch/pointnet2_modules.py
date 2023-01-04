@@ -19,7 +19,7 @@ class _PointnetSAModuleBase(nn.Module):
     def forward(self, xyz: torch.Tensor, features: torch.Tensor = None, new_xyz=None) -> (torch.Tensor, torch.Tensor):
         """
         :param xyz: (B, N, 3) tensor of the xyz coordinates of the features
-        :param features: (B, N, C) tensor of the descriptors of the the features
+        :param features: (B, C, N) tensor of the descriptors of the the features
         :param new_xyz:
         :return:
             new_xyz: (B, npoint, 3) tensor of the new features' xyz
@@ -27,6 +27,7 @@ class _PointnetSAModuleBase(nn.Module):
         """
         new_features_list = []
 
+        #* [batch_size, N, 3]->[batch_size, 3, N]
         xyz_flipped = xyz.transpose(1, 2).contiguous()
         if new_xyz is None:
             new_xyz = pointnet2_utils.gather_operation(
@@ -66,7 +67,7 @@ class PointnetSAModuleMSG(_PointnetSAModuleBase):
         :param nsamples: list of int, number of samples in each ball query
         :param mlps: list of list of int, spec of the pointnet before the global pooling for each scale
         :param bn: whether to use batchnorm
-        :param use_xyz:
+        :param use_xyz: 是否使用xyz数据
         :param pool_method: max_pool / avg_pool
         """
         super().__init__()
