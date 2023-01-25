@@ -29,6 +29,19 @@
                 "--cfg_file",
                 "cfgs/kitti_models/pointrcnn.yaml"
             ]
+        },
+        {
+            "name": "Train SASA",
+            "type": "python",
+            "request": "launch",
+            "program": "train.py",
+            "cwd": "${workspaceFolder}/tools",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--cfg_file",
+                "cfgs/kitti_models/3dssd_sasa.yaml"
+            ]
         }
     ]
 }
