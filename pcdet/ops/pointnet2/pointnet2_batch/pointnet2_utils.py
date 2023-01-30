@@ -36,6 +36,28 @@ class FarthestPointSampling(Function):
 farthest_point_sample = furthest_point_sample = FarthestPointSampling.apply
 
 
+@torch.no_grad()
+def furthest_point_sample_weights(xyz: torch.Tensor, weights: torch.Tensor, npoint: int) -> torch.Tensor:
+    """
+    Uses iterative furthest point sampling to select a set of npoint features that have the largest
+    minimum weighted distance
+    Args:
+        xyz: (B, N, 3), tensor of xyz coordinates
+        weights: (B, N), tensor of point weights
+        npoint: int, number of points in the sampled set
+    Returns:
+        output: (B, npoint) tensor containing the set
+    """
+    assert xyz.is_contiguous()
+    assert weights.is_contiguous()
+
+    B, N, _ = xyz.size()
+    output = torch.cuda.IntTensor(B, npoint)
+    temp = torch.cuda.FloatTensor(B, N).fill_(1e10)
+
+    pointnet2.furthest_point_sampling_weights_wrapper(B, N, npoint, xyz, weights, temp, output)
+    return output
+
 class GatherOperation(Function):
 
     @staticmethod
@@ -227,9 +249,57 @@ class BallQuery(Function):
 
 ball_query = BallQuery.apply
 
+class BallQueryDilated(Function):
+    @staticmethod
+    def forward(ctx, radius_in: float, radius_out: float, nsample: int, xyz: torch.Tensor, new_xyz: torch.Tensor) -> torch.Tensor:
+        """
+        :param radius_in: float, radius of the inner balls
+        :param radius_out: float, radius of the outer balls
+        :param nsample: int, maximum number of features in the balls
+        :param xyz: (B, N, 3) xyz coordinates of the features
+        :param new_xyz: (B, npoint, 3) centers of the ball query
+        :return:
+            idx_cnt: (B, npoint) tensor with the number of grouped points for each ball query
+            idx: (B, npoint, nsample) tensor with the indicies of the features that form the query balls
+        """
+        assert new_xyz.is_contiguous()
+        assert xyz.is_contiguous()
+
+        B, N, _ = xyz.size()
+        npoint = new_xyz.size(1)
+        idx_cnt = torch.cuda.IntTensor(B, npoint).zero_()
+        idx = torch.cuda.IntTensor(B, npoint, nsample).zero_()
+        #* 输入参数:
+        #*      B: batch_size
+        #*      N: 采样范围内的点数
+        #*      npoint: 需要采样的点个数
+        #*      radius_in: 内圈的半径
+        #*      radius_out: 外圈的半径
+        #*      nsample: 每个group的最大点数
+        #*      new_xyz: 采样的点的坐标
+        #*      xyz: 采样范围内的点的坐标
+        #*      idx_cnt: [batch_size, 需要采样的点个数]的全0张量, 用来存储每个采样点周围半径内的点数
+        #*      idx: [batch_size, 需要采样的点个数, 每个group中的点的索引], 用来存储每个采样点周围半径内用来group的点的索引
+        pointnet2.ball_query_dilated_wrapper(B, N, npoint, radius_in, radius_out, nsample, new_xyz, xyz, idx_cnt, idx)
+        return idx_cnt, idx
+
+    @staticmethod
+    def backward(ctx, a=None):
+        return None, None, None, None
+
+ball_query_dilated = BallQueryDilated.apply
 
 class QueryAndGroup(nn.Module):
-    def __init__(self, radius: float, nsample: int, use_xyz: bool = True):
+    def __init__(self, radius: float, nsample: int, use_xyz: bool = True,
+                 use_density = False,
+                 use_distance_to_center = False,
+                 use_distance_to_origin = False,
+                 use_absolute_direction_angle = False,
+                 use_relative_direction_angle = False,
+                 use_sincos = False,
+                 extra_dim_mlp = None,
+                 fusion_type = '',
+):
         """
         :param radius: float, radius of ball
         :param nsample: int, maximum number of features to gather in the ball
@@ -237,8 +307,45 @@ class QueryAndGroup(nn.Module):
         """
         super().__init__()
         self.radius, self.nsample, self.use_xyz = radius, nsample, use_xyz
+        self.use_density = use_density
+        self.use_distance_to_center = use_distance_to_center
+        self.use_distance_to_origin = use_distance_to_origin
+        self.use_absolute_direction_angle = use_absolute_direction_angle
+        self.use_relative_direction_angle = use_relative_direction_angle
+        self.use_sincos = use_sincos
+        self.extra_dim_mlp = None
+        self.fusion_type = fusion_type
+        if extra_dim_mlp:
+            input_channels = 0
+            if(use_xyz):
+                input_channels+=3
+            if(use_density):
+                input_channels+=1
+            if(use_relative_direction_angle):
+                if(use_sincos):
+                    input_channels+=6
+                else:
+                    input_channels+=3
+            if(use_absolute_direction_angle):
+                if(use_sincos):
+                    input_channels+=6
+                else:
+                    input_channels+=3
+            if(use_distance_to_center):
+                input_channels+=1
+            if(use_distance_to_origin):
+                input_channels+=1
+            extra_dim_layers = []
+            extra_dim_mlp = [input_channels] + extra_dim_mlp
+            for i in range(len(extra_dim_mlp)-1):
+                extra_dim_layers.extend([
+                    nn.Conv2d(extra_dim_mlp[i], extra_dim_mlp[i+1], 1, bias = False),
+                    nn.BatchNorm2d(extra_dim_mlp[i+1]),
+                    nn.ReLU()
+                ])
+            self.extra_dim_mlp = nn.Sequential(*extra_dim_layers)
 
-    def forward(self, xyz: torch.Tensor, new_xyz: torch.Tensor, features: torch.Tensor = None) -> Tuple[torch.Tensor]:
+    def forward(self, xyz: torch.Tensor, new_xyz: torch.Tensor, features: torch.Tensor = None):
         """
         :param xyz: (B, N, 3) xyz coordinates of the features
         :param new_xyz: (B, npoint, 3) centroids
@@ -246,21 +353,240 @@ class QueryAndGroup(nn.Module):
         :return:
             new_features: (B, 3 + C, npoint, nsample)
         """
+        # idx_cnt, idx = ball_query(self.radius, self.nsample, xyz, new_xyz)
         idx = ball_query(self.radius, self.nsample, xyz, new_xyz)
+        idx_cnt = (idx==idx[:,:,0].unsqueeze(-1)).sum(-1)
         xyz_trans = xyz.transpose(1, 2).contiguous()
         grouped_xyz = grouping_operation(xyz_trans, idx)  # (B, 3, npoint, nsample)
+        if(self.use_distance_to_origin):
+            grouped_xyz_distance_to_origin = torch.sqrt(torch.square(grouped_xyz).sum(dim=1, keepdim=True))
+            grouped_xyz_distance_to_origin = torch.clamp(torch.log(grouped_xyz_distance_to_origin), min=0)
+        if(self.use_absolute_direction_angle):
+            grouped_abs_xyz_angle_1 = torch.atan2(grouped_xyz[:,1,:,:], grouped_xyz[:,0,:,:]).unsqueeze(1)
+            grouped_abs_xyz_angle_2 = torch.atan2(grouped_xyz[:,2,:,:], grouped_xyz[:,1,:,:]).unsqueeze(1)
+            grouped_abs_xyz_angle_3 = torch.atan2(grouped_xyz[:,0,:,:], grouped_xyz[:,2,:,:]).unsqueeze(1)
+        #* 将group内的点减去当前的采样点, [batch_size ,3 , 采样的点数， 每个采样点周围group的点数]
         grouped_xyz -= new_xyz.transpose(1, 2).unsqueeze(-1)
+        
+        if(self.use_absolute_direction_angle):
+            if(self.use_sincos):
+                grouped_xyz = torch.cat([grouped_xyz,
+                            torch.sin(grouped_abs_xyz_angle_1),
+                            torch.cos(grouped_abs_xyz_angle_1),
+                            torch.sin(grouped_abs_xyz_angle_2),
+                            torch.cos(grouped_abs_xyz_angle_2),
+                            torch.sin(grouped_abs_xyz_angle_3),
+                            torch.cos(grouped_abs_xyz_angle_3)])
+            else:
+                grouped_xyz = torch.cat([grouped_xyz, 
+                                grouped_abs_xyz_angle_1, 
+                                grouped_abs_xyz_angle_2, 
+                                grouped_abs_xyz_angle_3],
+                                dim = 1)
 
+        #! 增加原始点属性
+        batch_size, _, npoint, nsample = grouped_xyz.shape
+        if(self.use_relative_direction_angle):
+            grouped_rel_xyz_angle_1 = torch.atan2(grouped_xyz[:,1,:,:], grouped_xyz[:,0,:,:]).unsqueeze(1)
+            grouped_rel_xyz_angle_2 = torch.atan2(grouped_xyz[:,2,:,:], grouped_xyz[:,1,:,:]).unsqueeze(1)
+            grouped_rel_xyz_angle_3 = torch.atan2(grouped_xyz[:,0,:,:], grouped_xyz[:,2,:,:]).unsqueeze(1)
+            if(self.use_sincos):
+                grouped_xyz = torch.cat([grouped_xyz,
+                            torch.sin(grouped_rel_xyz_angle_1),
+                            torch.cos(grouped_rel_xyz_angle_1),
+                            torch.sin(grouped_rel_xyz_angle_2),
+                            torch.cos(grouped_rel_xyz_angle_2),
+                            torch.sin(grouped_rel_xyz_angle_3),
+                            torch.cos(grouped_rel_xyz_angle_3)])
+            else:
+                grouped_xyz = torch.cat([grouped_xyz, 
+                                grouped_rel_xyz_angle_1, 
+                                grouped_rel_xyz_angle_2, 
+                                grouped_rel_xyz_angle_3],
+                                dim = 1)
+        if(self.use_distance_to_center):
+            grouped_xyz_distance_to_center = torch.sqrt(torch.square(grouped_xyz).sum(dim=1, keepdim=True))
+            grouped_xyz_distance_to_center = torch.clamp(torch.log(grouped_xyz_distance_to_center), min=0)
+            grouped_xyz = torch.cat([grouped_xyz, grouped_xyz_distance_to_center], dim=1)
+            
+        if(self.use_distance_to_origin):
+            grouped_xyz = torch.cat([grouped_xyz, grouped_xyz_distance_to_origin], dim=1)
+            
+        if(self.use_density):
+            grouped_xyz_density = torch.log10(torch.clamp(idx_cnt, min=1)).repeat(1,nsample).view([batch_size, 1, npoint, nsample])
+            grouped_xyz = torch.cat([grouped_xyz, grouped_xyz_density], dim=1)
+        
+        if self.extra_dim_mlp:
+            grouped_xyz = self.extra_dim_mlp(grouped_xyz)
+        
         if features is not None:
+            #* 如果特征不是None, 就要把特征也做grouping
             grouped_features = grouping_operation(features, idx)
-            if self.use_xyz:
-                new_features = torch.cat([grouped_xyz, grouped_features], dim=1)  # (B, C + 3, npoint, nsample)
+            if(self.fusion_type):
+                if(self.fusion_type == 'add'):
+                    assert grouped_xyz.shape==grouped_features.shape
+                    new_features = grouped_xyz+grouped_features
+                elif(self.fusion_type == 'concatation'):
+                    new_features = torch.cat([grouped_xyz, grouped_features], dim=1)  # (B, C + 3, npoint, nsample)
             else:
                 new_features = grouped_features
         else:
-            assert self.use_xyz, "Cannot have not features and not use xyz as a feature!"
             new_features = grouped_xyz
+        
+        return new_features
+        
+class QueryAndGroupDilated(nn.Module):
+    def __init__(self, radius_in: float, radius_out: float, nsample: int, use_xyz: bool = True,
+                 use_density = False,
+                 use_distance_to_center = False,
+                 use_distance_to_origin = False,
+                 use_relative_direction_angle = False,
+                 use_absolute_direction_angle = False,
+                 use_sincos = False,
+                 extra_dim_mlp = None,
+                 fusion_type = 'concatation'):
+        """
+        :param radius_in: float, radius of inner ball
+        :param radius_out: float, radius of outer ball
+        :param nsample: int, maximum number of features to gather in the ball
+        :param use_xyz:
+        """
+        super().__init__()
+        self.radius_in, self.radius_out, self.nsample, self.use_xyz = radius_in, radius_out, nsample, use_xyz
+        self.use_density = use_density
+        self.use_distance_to_center = use_distance_to_center
+        self.use_distance_to_origin = use_distance_to_origin
+        self.use_relative_direction_angle = use_relative_direction_angle
+        self.use_absolute_direction_angle = use_absolute_direction_angle
+        self.use_sincos = use_sincos
+        self.extra_dim_mlp = None
+        self.fusion_type = fusion_type
+        if extra_dim_mlp:
+            input_channels = 0
+            if(use_xyz):
+                input_channels+=3
+            if(use_density):
+                input_channels+=1
+            if(use_relative_direction_angle):
+                if use_sincos:
+                    input_channels+=6
+                else:
+                    input_channels+=3
+            
+            if(use_absolute_direction_angle):
+                if use_sincos:
+                    input_channels+=6
+                else:
+                    input_channels+=3
+                    
+            if(use_distance_to_center):
+                input_channels+=1
+            if(use_distance_to_origin):
+                input_channels+=1
+            extra_dim_layers = []
+            extra_dim_mlp = [input_channels] + extra_dim_mlp
+            for i in range(len(extra_dim_mlp)-1):
+                extra_dim_layers.extend([
+                    nn.Conv2d(extra_dim_mlp[i], extra_dim_mlp[i+1], 1, bias = False),
+                    nn.BatchNorm2d(extra_dim_mlp[i+1]),
+                    nn.ReLU()
+                ])
+            self.extra_dim_mlp = nn.Sequential(*extra_dim_layers)
 
+    def forward(self, xyz: torch.Tensor, new_xyz: torch.Tensor, features: torch.Tensor = None):
+        """
+        :param xyz: (B, N, 3) xyz coordinates of the features
+        :param new_xyz: (B, npoint, 3) centroids
+        :param features: (B, C, N) descriptors of the features
+        :return:
+            new_features: (B, 3 + C, npoint, nsample)
+            idx_cnt: (B, npoint) tensor with the number of grouped points for each ball query
+        """
+        #* idx_cnt: [batch_size, 需要采样的点个数]的全0张量, 用来存储每个采样点周围半径内的点数
+        #* idx: [batch_size, 需要采样的点个数, 每个group中的点数], 用来存储每个采样点周围半径内用来group的点的索引
+        idx_cnt, idx = ball_query_dilated(self.radius_in, self.radius_out, self.nsample, xyz, new_xyz)
+        #* xyz_trans: [batch_size, 采样范围内的点数, 3]->[batch_size, 3, 采样范围内的点数]
+        xyz_trans = xyz.transpose(1, 2).contiguous()
+        #* 特征聚合， [batch_size ,3 , 采样的点数， 每个采样点周围group的点数]
+        grouped_xyz = grouping_operation(xyz_trans, idx)  # (B, 3, npoint, nsample)
+        
+        if(self.use_distance_to_origin):
+            grouped_xyz_distance_to_origin = torch.sqrt(torch.square(grouped_xyz).sum(dim=1, keepdim=True))
+            grouped_xyz_distance_to_origin = torch.clamp(torch.log(grouped_xyz_distance_to_origin), min=0)
+        if(self.use_absolute_direction_angle):
+            grouped_abs_xyz_angle_1 = torch.atan2(grouped_xyz[:,1,:,:], grouped_xyz[:,0,:,:]).unsqueeze(1)
+            grouped_abs_xyz_angle_2 = torch.atan2(grouped_xyz[:,2,:,:], grouped_xyz[:,1,:,:]).unsqueeze(1)
+            grouped_abs_xyz_angle_3 = torch.atan2(grouped_xyz[:,0,:,:], grouped_xyz[:,2,:,:]).unsqueeze(1)
+        #* 将group内的点减去当前的采样点, [batch_size ,3 , 采样的点数， 每个采样点周围group的点数]
+        grouped_xyz -= new_xyz.transpose(1, 2).unsqueeze(-1)
+        
+        if(self.use_absolute_direction_angle):
+            if(self.use_sincos):
+                grouped_xyz = torch.cat([grouped_xyz,
+                            torch.sin(grouped_abs_xyz_angle_1),
+                            torch.cos(grouped_abs_xyz_angle_1),
+                            torch.sin(grouped_abs_xyz_angle_2),
+                            torch.cos(grouped_abs_xyz_angle_2),
+                            torch.sin(grouped_abs_xyz_angle_3),
+                            torch.cos(grouped_abs_xyz_angle_3)],
+                            dim = 1)
+            else:
+                grouped_xyz = torch.cat([grouped_xyz, 
+                                grouped_abs_xyz_angle_1, 
+                                grouped_abs_xyz_angle_2, 
+                                grouped_abs_xyz_angle_3],
+                                dim = 1)
+
+        #! 增加原始点属性
+        batch_size, _, npoint, nsample = grouped_xyz.shape
+        if(self.use_relative_direction_angle):
+            grouped_rel_xyz_angle_1 = torch.atan2(grouped_xyz[:,1,:,:], grouped_xyz[:,0,:,:]).unsqueeze(1)
+            grouped_rel_xyz_angle_2 = torch.atan2(grouped_xyz[:,2,:,:], grouped_xyz[:,1,:,:]).unsqueeze(1)
+            grouped_rel_xyz_angle_3 = torch.atan2(grouped_xyz[:,0,:,:], grouped_xyz[:,2,:,:]).unsqueeze(1)
+            if(self.use_sincos):
+                grouped_xyz = torch.cat([grouped_xyz,
+                            torch.sin(grouped_rel_xyz_angle_1),
+                            torch.cos(grouped_rel_xyz_angle_1),
+                            torch.sin(grouped_rel_xyz_angle_2),
+                            torch.cos(grouped_rel_xyz_angle_2),
+                            torch.sin(grouped_rel_xyz_angle_3),
+                            torch.cos(grouped_rel_xyz_angle_3)],
+                            dim = 1)
+            else:
+                grouped_xyz = torch.cat([grouped_xyz, 
+                                grouped_rel_xyz_angle_1, 
+                                grouped_rel_xyz_angle_2, 
+                                grouped_rel_xyz_angle_3],
+                                dim = 1)
+        if(self.use_distance_to_center):
+            grouped_xyz_distance_to_center = torch.sqrt(torch.square(grouped_xyz).sum(dim=1, keepdim=True))
+            grouped_xyz_distance_to_center = torch.clamp(torch.log(grouped_xyz_distance_to_center), min=0)
+            grouped_xyz = torch.cat([grouped_xyz, grouped_xyz_distance_to_center], dim=1)
+            
+        if(self.use_distance_to_origin):
+            grouped_xyz = torch.cat([grouped_xyz, grouped_xyz_distance_to_origin], dim=1)
+            
+        if(self.use_density):
+            grouped_xyz_density = torch.log10(torch.clamp(idx_cnt, min=1)).repeat(1,nsample).view([batch_size, 1, npoint, nsample])
+            grouped_xyz = torch.cat([grouped_xyz, grouped_xyz_density], dim=1)
+        
+        if self.extra_dim_mlp:
+            grouped_xyz = self.extra_dim_mlp(grouped_xyz)
+        
+        if features is not None:
+            #* 如果特征不是None, 就要把特征也做grouping
+            grouped_features = grouping_operation(features, idx)
+            if(self.fusion_type):
+                if(self.fusion_type == 'add'):
+                    assert grouped_xyz.shape==grouped_features.shape
+                    new_features = grouped_xyz+grouped_features
+                elif(self.fusion_type == 'concatation'):
+                    new_features = torch.cat([grouped_xyz, grouped_features], dim=1)  # (B, C + 3, npoint, nsample)
+            else:
+                new_features = grouped_features
+        else:
+            new_features = grouped_xyz
+        
         return new_features
 
 

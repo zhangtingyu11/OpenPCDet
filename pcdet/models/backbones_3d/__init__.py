@@ -1,4 +1,4 @@
-from .pointnet2_backbone import PointNet2Backbone, PointNet2MSG
+from .pointnet2_backbone import PointNet2Backbone, PointNet2MSG, PointNet2FSMSG
 from .spconv_backbone import VoxelBackBone8x, VoxelResBackBone8x
 from .spconv_backbone_2d import PillarBackBone8x, PillarRes18BackBone8x
 from .spconv_backbone_focal import VoxelBackBone8xFocal
@@ -9,6 +9,7 @@ __all__ = {
     'UNetV2': UNetV2,
     'PointNet2Backbone': PointNet2Backbone,
     'PointNet2MSG': PointNet2MSG,
+    'PointNet2FSMSG': PointNet2FSMSG,
     'VoxelResBackBone8x': VoxelResBackBone8x,
     'VoxelBackBone8xFocal': VoxelBackBone8xFocal,
     'PillarBackBone8x': PillarBackBone8x,

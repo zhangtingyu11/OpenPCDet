@@ -44,3 +44,15 @@ int farthest_point_sampling_wrapper(int b, int n, int m,
     farthest_point_sampling_kernel_launcher(b, n, m, points, temp, idx);
     return 1;
 }
+
+int furthest_point_sampling_weights_wrapper(int b, int n, int m,
+    at::Tensor points_tensor, at::Tensor weights_tensor, at::Tensor temp_tensor, at::Tensor idx_tensor) {
+
+    const float *points = points_tensor.data<float>();
+    const float *weights = weights_tensor.data<float>();
+    float *temp = temp_tensor.data<float>();
+    int *idx = idx_tensor.data<int>();
+
+    furthest_point_sampling_weights_kernel_launcher(b, n, m, points, weights, temp, idx);
+    return 1;
+}

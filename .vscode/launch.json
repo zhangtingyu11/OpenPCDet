@@ -42,6 +42,32 @@
                 "--cfg_file",
                 "cfgs/kitti_models/3dssd_sasa.yaml"
             ]
+        },
+        {
+            "name": "Train SASA 3classes",
+            "type": "python",
+            "request": "launch",
+            "program": "train.py",
+            "cwd": "${workspaceFolder}/tools",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--cfg_file",
+                "cfgs/kitti_models/3dssd_sasa_3classes.yaml"
+            ]
+        },
+        {
+            "name": "Train SASA 3classes with extra dim",
+            "type": "python",
+            "request": "launch",
+            "program": "train.py",
+            "cwd": "${workspaceFolder}/tools",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--cfg_file",
+                "cfgs/kitti_models/3dssd_sasa_3classes_use_all.yaml"
+            ]
         }
     ]
 }

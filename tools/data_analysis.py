@@ -76,4 +76,4 @@ def analyze_log_file(log_file):
                 
 
 if __name__ == "__main__":
-    analyze_log_file("/home/zty/Project/DeepLearning/PDV/output/kitti_models/pdv_no_density/origin/log_train_20230118-153947.txt")
+    analyze_log_file("/home/zty/Project/DeepLearning/OpenPCDet/output/kitti_models/3dssd_sasa_use_all_backbone/origin/log_train_20230130-093422.txt")

@@ -121,6 +121,201 @@ class PointNet2MSG(nn.Module):
         """
         return batch_dict
 
+class PointNet2FSMSG(nn.Module):
+    def __init__(self, model_cfg, input_channels, **kwargs):
+        super().__init__()
+        self.model_cfg = model_cfg
+
+        self.SA_modules = nn.ModuleList()
+        channel_in = input_channels - 3
+        
+        self.num_points_each_layer = []
+        skip_channel_list = [input_channels - 3]
+        
+        use_xyz = self.model_cfg.SA_CONFIG.get('USE_XYZ', True)
+        
+        use_density = self.model_cfg.SA_CONFIG.get("USE_DENSITY", False)
+        use_distance_to_center = self.model_cfg.SA_CONFIG.get("USE_DISTANCE_TO_CENTER", False)
+        use_distance_to_origin = self.model_cfg.SA_CONFIG.get("USE_DISTANCE_TO_ORIGIN", False)
+        use_relative_direction_angle = self.model_cfg.SA_CONFIG.get("USE_RELATIVE_DIRECTION_ANGLE", False)
+        use_absolute_direction_angle = self.model_cfg.SA_CONFIG.get("USE_ABSOLUTE_DIRECTION_ANGLE", False)
+        use_sincos = self.model_cfg.SA_CONFIG.get("USE_SINCOS", False)
+        fusion_type = self.model_cfg.SA_CONFIG.get("FUSION_TYPE", None)
+        
+        dilated_group = self.model_cfg.SA_CONFIG.get('DILATED_RADIUS_GROUP', False)
+        skip_connection = self.model_cfg.SA_CONFIG.get('SKIP_CONNECTION', False)
+        weight_gamma = self.model_cfg.SA_CONFIG.get('WEIGHT_GAMMA', 1.0)
+
+        self.aggregation_mlps = self.model_cfg.SA_CONFIG.get('AGGREGATION_MLPS', None)
+        self.confidence_mlps = self.model_cfg.SA_CONFIG.get('CONFIDENCE_MLPS', None)
+        self.extra_dim_mlps = self.model_cfg.SA_CONFIG.get("EXTRA_DIM_MLPS", None)
+        
+        for k in range(self.model_cfg.SA_CONFIG.NPOINT_LIST.__len__()):
+            mlps = self.model_cfg.SA_CONFIG.MLPS[k].copy()
+            channel_out = 0
+            for idx in range(mlps.__len__()):
+                mlps[idx] = [channel_in] + mlps[idx]
+                channel_out += mlps[idx][-1]
+
+            if skip_connection:
+                channel_out += channel_in
+
+            if self.aggregation_mlps and self.aggregation_mlps[k]:
+                aggregation_mlp = self.aggregation_mlps[k].copy()
+                if aggregation_mlp.__len__() == 0:
+                    aggregation_mlp = None
+                else:
+                    channel_out = aggregation_mlp[-1]
+            else:
+                aggregation_mlp = None
+
+            if self.confidence_mlps and self.confidence_mlps[k]:
+                confidence_mlp = self.confidence_mlps[k].copy()
+                if confidence_mlp.__len__() == 0:
+                    confidence_mlp = None
+            else:
+                confidence_mlp = None
+                
+            if self.extra_dim_mlps and self.extra_dim_mlps[k]:
+                extra_dim_mlp = self.extra_dim_mlps[k].copy()
+                if(extra_dim_mlp.__len__() == 0):
+                    extra_dim_mlp = None
+            else:
+                extra_dim_mlp = None
+
+            self.SA_modules.append(
+                pointnet2_modules.PointnetSAModuleFSMSG(
+                    npoint_list=self.model_cfg.SA_CONFIG.NPOINT_LIST[k],
+                    sample_range_list=self.model_cfg.SA_CONFIG.SAMPLE_RANGE_LIST[k],
+                    sample_method_list=self.model_cfg.SA_CONFIG.SAMPLE_METHOD_LIST[k],
+                    radii=self.model_cfg.SA_CONFIG.RADIUS[k],
+                    nsamples=self.model_cfg.SA_CONFIG.NSAMPLE[k],
+                    mlps=mlps,
+                    fusion_type = fusion_type[k],
+                    use_xyz=use_xyz,
+                    use_density=use_density,
+                    use_distance_to_center=use_distance_to_center,
+                    use_distance_to_origin=use_distance_to_origin,
+                    use_relative_direction_angle=use_relative_direction_angle,
+                    use_absolute_direction_angle=use_absolute_direction_angle,
+                    use_sincos=use_sincos,
+                    dilated_radius_group=dilated_group,
+                    skip_connection=skip_connection,
+                    weight_gamma=weight_gamma,
+                    aggregation_mlp=aggregation_mlp,
+                    confidence_mlp=confidence_mlp,
+                    extra_dim_mlp=extra_dim_mlp,
+                )
+            )
+            self.num_points_each_layer.append(
+                sum(self.model_cfg.SA_CONFIG.NPOINT_LIST[k]))
+            skip_channel_list.append(channel_out)
+            channel_in = channel_out
+        
+        self.num_point_features = channel_out
+
+        fp_mlps = self.model_cfg.get('FP_MLPS', None)
+        if fp_mlps is not None:
+            self.FP_modules = nn.ModuleList()
+            l_skipped = self.model_cfg.SA_CONFIG.NPOINT_LIST.__len__() - self.model_cfg.FP_MLPS.__len__()
+            for k in range(fp_mlps.__len__()):
+                pre_channel = fp_mlps[k + 1][-1] if k + 1 < len(fp_mlps) else channel_out
+                self.FP_modules.append(
+                    pointnet2_modules.PointnetFPModule(
+                        mlp=[pre_channel + skip_channel_list[k + l_skipped]] + fp_mlps[k]
+                    )
+                )
+            self.num_point_features = fp_mlps[0][-1]
+        else:
+            self.FP_modules = None
+
+    def break_up_pc(self, pc):
+        batch_idx = pc[:, 0]
+        xyz = pc[:, 1:4].contiguous()
+        features = (pc[:, 4:].contiguous() if pc.size(-1) > 4 else None)
+        return batch_idx, xyz, features
+
+    def forward(self, batch_dict):
+        """
+        Args:
+            batch_dict:
+                batch_size: int
+                points: (num_points, 4 + C), [batch_idx, x, y, z, ...]
+        Returns:
+            batch_dict:
+                point_coords: (N, 3)
+                point_features: (N, C)
+                point_confidence_scores: (N, 1)
+        """
+        batch_size = batch_dict['batch_size']
+        #* 初始的点云，[一个batch中的点个数, 5], batch_idx, x, y, z, features(intensity)
+        points = batch_dict['points']
+        #* batch_idx: [一个batch中的点个数]
+        #* xyz: [一个batch中的点个数, 3]
+        #* features: [一个batch中的点个数, 特征维度]
+        batch_idx, xyz, features = self.break_up_pc(points)
+        #* 用来记录每个batch里面点的个数
+        xyz_batch_cnt = xyz.new_zeros(batch_size).int()
+        for bs_idx in range(batch_size):
+            xyz_batch_cnt[bs_idx] = (batch_idx == bs_idx).sum()
+
+        assert xyz_batch_cnt.min() == xyz_batch_cnt.max()
+        #* xyz: [一个batch中的点个数, 3]->[batch_size， 每个sample的点数， 3]
+        xyz = xyz.view(batch_size, -1, 3).contiguous()
+        #* features:[一个batch中的点个数, 特征维度] -> [batch_size，每个sample的点数，1]
+        features = features.view(batch_size, -1, features.shape[-1]) if features is not None else None
+        #* features:[batch_size，每个sample的点数，1] -> [batch_size，1，每个sample的点数]
+        features = features.permute(0, 2, 1).contiguous() if features is not None else None
+        #* batch_idx: [一个batch中的点个数]->[batch_size， 每个sample中点的个数]
+        batch_idx = batch_idx.view(batch_size, -1).float()
+        #* l_xyz用来存储多次SA模块得到的采样点的坐标, 第0个是原始点的坐标
+        #* l_features用来存储多次SA模块得到的采样点的特征, 第0个是原始点的特征
+        #* l_scores用来存储多次SA模块得到的, 第0个是None
+        l_xyz, l_features, l_scores = [xyz], [features], [None]
+        for i in range(len(self.SA_modules)):
+            #* li_xyz: 采样点的坐标
+            #* li_features: 采样点的特征
+            #* li_scores: 采样点的分数
+            li_xyz, li_features, li_scores = self.SA_modules[i](
+                l_xyz[i], l_features[i], scores=l_scores[i])
+            l_xyz.append(li_xyz)
+            l_features.append(li_features)
+            l_scores.append(li_scores)
+
+        # prepare for confidence loss
+        l_xyz_flatten, l_scores_flatten = [], []
+        #* l_xyz_flatten存储的是每次SA模块得到的采样点的坐标，是一个列表，里面每个元素是[当前SA模块采样的点个数, 4] 4: batch_idx, x, y, z
+        #! 注意l_xyz_flatten不包括原始点
+        for i in range(1, len(l_xyz)):
+            l_xyz_flatten.append(torch.cat([
+                batch_idx[:, :l_xyz[i].size(1)].reshape(-1, 1),
+                l_xyz[i].reshape(-1, 3)
+            ], dim=1))  # (N, 4)
+        for i in range(1, len(l_scores)):
+            if l_scores[i] is None:
+                l_scores_flatten.append(None)
+            else:
+                l_scores_flatten.append(l_scores[i].reshape(-1, 1))  # (N, 1)
+        batch_dict['point_coords_list'] = l_xyz_flatten
+        batch_dict['point_scores_list'] = l_scores_flatten
+
+        if self.FP_modules is not None:
+            for i in range(-1, -(len(self.FP_modules) + 1), -1):
+                l_features[i - 1] = self.FP_modules[i](
+                    l_xyz[i - 1], l_xyz[i], l_features[i - 1], l_features[i]
+                )  # (B, C, N)
+        else:  # take l_xyz[i - 1] and l_features[i - 1]
+            i = 0
+        #* point_features是最后一个SA模块输出的点的特征，[batch_size, 最后一层SA模块的采样点个数， 特征维度]
+        point_features = l_features[i - 1].permute(0, 2, 1).contiguous()  # (B, N, C)
+        #* batch_dict['point_features']: [batch_size*最后一层SA模块的采样点个数， 特征维度]
+        batch_dict['point_features'] = point_features.view(-1, point_features.shape[-1])
+        #* batch_dict['point_coords']: [batch_size*最后一层SA模块的采样点个数, 4] 4:batch_size, x, y, z
+        batch_dict['point_coords'] = torch.cat((
+            batch_idx[:, :l_xyz[i - 1].size(1)].reshape(-1, 1).float(),
+            l_xyz[i - 1].view(-1, 3)), dim=1)
+        batch_dict['point_scores'] = l_scores[-1]  # (B, N)
+        return batch_dict
 
 class PointNet2Backbone(nn.Module):
     """
