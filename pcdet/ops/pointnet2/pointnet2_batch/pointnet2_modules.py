@@ -122,7 +122,8 @@ class _PointnetSAModuleFSBase(nn.Module):
                 xyz: torch.Tensor,
                 features: torch.Tensor = None,
                 new_xyz=None,
-                scores=None):
+                scores=None,
+                counts=None):
         """
         :param xyz: (B, N, 3) tensor of the xyz coordinates of the features
         :param features: (B, C, N) tensor of the descriptors of the features
@@ -165,6 +166,19 @@ class _PointnetSAModuleFSBase(nn.Module):
                         scores_slice,
                         self.npoint_list[i]
                     )
+                elif self.sample_method_list[i] == 'ds-fps':
+                    assert counts is not None
+                    scores_slice = \
+                        scores[:, self.sample_range_list[i][0]:self.sample_range_list[i][1]].contiguous()
+                    scores_slice = scores_slice.sigmoid() ** self.weight_gamma
+                    counts_slice = \
+                        counts[:, self.sample_range_list[i][0]:self.sample_range_list[i][1]].contiguous()
+                    scores_slice = torch.mul(scores_slice, (1-torch.sigmoid(torch.log10(counts_slice))) ** self.weight_lambda)
+                    sample_idx = pointnet2_utils.furthest_point_sample_weights(
+                        xyz_slice,
+                        scores_slice,
+                        self.npoint_list[i]
+                    )
                 else:
                     raise NotImplementedError
                 #* 采样点的索引需要加上采样范围的起始点的索引
@@ -187,7 +201,7 @@ class _PointnetSAModuleFSBase(nn.Module):
                     features,
                     sample_idx
                 ) if features is not None else None  # (B, C, npoint)
-
+        idx_cnt = None
         for i in range(len(self.groupers)):
             #* grouper的输入参数
             #*      xyz: 采样范围内的点坐标,[batch_size, 采样范围内的点数, 3]
@@ -197,8 +211,14 @@ class _PointnetSAModuleFSBase(nn.Module):
             #*      idx_cnt: 每个采样点group内的真实点个数
             #*      new_features: group后的特征，[batch_size, 特征维度, 采样的点个数， group中的最大点个数]
             # idx_cnt, new_features = self.groupers[i](xyz, new_xyz, features)  # (B, C, npoint, nsample)
-            new_features = self.groupers[i](xyz, new_xyz, features)  # (B, C, npoint, nsample)
-            
+            new_features, cur_idx_cnt = self.groupers[i](xyz, new_xyz, features)  # (B, C, npoint, nsample)
+            if(isinstance(self.groupers[i], pointnet2_utils.QueryAndGroupDilated)):
+                if(idx_cnt is None):
+                    idx_cnt = cur_idx_cnt
+                else:
+                    idx_cnt += cur_idx_cnt
+            else:
+                idx_cnt = cur_idx_cnt
 
             #* 使用1*1卷积来处理特征，当做MLP
             new_features = self.mlps[i](new_features)  # (B, mlp[-1], npoint, nsample)
@@ -233,9 +253,9 @@ class _PointnetSAModuleFSBase(nn.Module):
         if self.confidence_mlp is not None:
             new_scores = self.confidence_mlp(new_features)
             new_scores = new_scores.squeeze(1)  # (B, npoint)
-            return new_xyz, new_features, new_scores
-        #* 返回采样点的坐标， 采样点的特征，None
-        return new_xyz, new_features, None
+            return new_xyz, new_features, new_scores, idx_cnt
+        #* 返回采样点的坐标， 采样点的特征，None, 
+        return new_xyz, new_features, None, idx_cnt
 
 
 class PointnetSAModuleFSMSG(_PointnetSAModuleFSBase):
@@ -261,6 +281,7 @@ class PointnetSAModuleFSMSG(_PointnetSAModuleFSBase):
                  dilated_radius_group: bool = False,
                  skip_connection: bool = False,
                  weight_gamma: float = 1.0,
+                 weight_lambda: float = 1.0,
                  aggregation_mlp: List[int] = None,
                  confidence_mlp: List[int] = None,
                  extra_dim_mlp: List[int] = None,
@@ -342,7 +363,7 @@ class PointnetSAModuleFSMSG(_PointnetSAModuleFSBase):
             mlp_spec = mlps[i]
             if(fusion_type == "concatation"):
                 if extra_dim_mlp:
-                    mlp_spec[0] += extra_dim_mlp[-1]
+                    mlp_spec[0] += cur_extra_dim_mlp[-1]
                 else:
                     if use_xyz:
                         mlp_spec[0] += 3
@@ -378,6 +399,7 @@ class PointnetSAModuleFSMSG(_PointnetSAModuleFSBase):
         self.dilated_radius_group = dilated_radius_group
         self.skip_connection = skip_connection
         self.weight_gamma = weight_gamma
+        self.weight_lambda = weight_lambda
 
         if skip_connection:
             out_channels += in_channels

@@ -31,6 +31,11 @@ class PointHeadVote(PointHeadTemplate):
 
         self.sa_cfg = self.model_cfg.SA_CONFIG
         channel_in, channel_out = input_channels, 0
+        
+        self.only_cls_confident_points = self.model_cfg.TARGET_CONFIG.get("ONLY_CLS_CONFIDENT_POINTS", False)
+        self.confident_points_per_batch = self.model_cfg.TARGET_CONFIG.get("CONFIDENT_POINTS_PER_BATCH", 100)
+        self.confident_points_flag = False
+
 
         mlps = self.sa_cfg.MLPS.copy()
         for idx in range(mlps.__len__()):
@@ -291,6 +296,124 @@ class PointHeadVote(PointHeadTemplate):
             targets_dict = self.assign_stack_targets_simple(points=points, gt_boxes=extend_gt_boxes,
                                                             set_ignore_flag=set_ignore_flag)
         return targets_dict
+    
+    def assign_stack_confident_targets_mask(self, points, pred_boxes, gt_boxes, 
+                                            pos_iou_threshold, neg_iou_threshold,
+                                            extend_gt_boxes=None,
+                                  set_ignore_flag=True, use_ball_constraint=False, central_radius=2.0,
+                                  ):
+        """
+        Args:
+            points: (N1 + N2 + N3 + ..., 4) [bs_idx, x, y, z]
+            gt_boxes: (B, M, 8)
+            extend_gt_boxes: [B, M, 8]
+            set_ignore_flag:
+            use_ball_constraint:
+            central_radius:
+        Returns:
+            point_cls_labels: (N1 + N2 + N3 + ...), long type, 0:background, -1:ignored
+            point_reg_labels: (N1 + N2 + N3 + ..., code_size)
+            point_box_labels: (N1 + N2 + N3 + ..., 7)
+        """
+        assert len(points.shape) == 2 and points.shape[1] == 4, 'points.shape=%s' % str(points.shape)
+        assert len(gt_boxes.shape) == 3, 'gt_boxes.shape=%s' % str(gt_boxes.shape)
+        assert extend_gt_boxes is None or len(extend_gt_boxes.shape) == 3, \
+            'extend_gt_boxes.shape=%s' % str(extend_gt_boxes.shape)
+        assert set_ignore_flag != use_ball_constraint, 'Choose one only!'
+        batch_size = gt_boxes.shape[0]
+        bs_idx = points[:, 0]
+        point_cls_labels = gt_boxes.new_zeros(points.shape[0]).long()
+        point_reg_labels = gt_boxes.new_zeros((points.shape[0], self.box_coder.code_size))
+        point_box_labels = gt_boxes.new_zeros((points.shape[0], gt_boxes.size(2) - 1))
+        ori_fg_num = 0
+        ori_bg_num = 0
+
+        for k in range(batch_size):
+            bs_mask = (bs_idx == k)
+            points_single = points[bs_mask][:, 1:4]
+            point_cls_labels_single = point_cls_labels.new_zeros(bs_mask.sum())
+            pred_boxes_single = pred_boxes[bs_mask]
+            pred_boxes_iou = iou3d_nms_utils.boxes_iou3d_gpu(
+                pred_boxes_single,
+                gt_boxes[k][:, :7]
+            )
+            pred_boxes_iou, box_idxs_of_pts = torch.max(pred_boxes_iou, dim=-1)
+            # fg_flag = pred_boxes_iou > pos_iou_threshold
+            # ignore_flag = (pred_boxes_iou > neg_iou_threshold) ^ fg_flag
+            #* 计算每个点对应的gt框的索引，没有对应的框就是-1
+            box_idxs_of_pts = roiaware_pool3d_utils.points_in_boxes_gpu(
+                points_single.unsqueeze(dim=0), gt_boxes[k:k + 1, :, 0:7].contiguous()
+            ).long().squeeze(dim=0)
+            #* 在gt内的flag
+            box_fg_flag = (box_idxs_of_pts >= 0)
+            if set_ignore_flag:
+                extend_box_idxs_of_pts = roiaware_pool3d_utils.points_in_boxes_gpu(
+                    points_single.unsqueeze(dim=0), extend_gt_boxes[k:k+1, :, 0:7].contiguous()
+                ).long().squeeze(dim=0)
+                #* 前景点为在包围框内, 且和gt的iou大于pos_iou_threshold
+                
+                fg_flag = box_fg_flag & (pred_boxes_iou > pos_iou_threshold)
+                ori_fg_num += box_fg_flag.sum()
+                #* 背景点为不在包围框内, 且和gt的iou小于neg_iou_threshold, 并且点不在扩大的包围框内
+                bg_flag = (~box_fg_flag) & (pred_boxes_iou < neg_iou_threshold) & (extend_box_idxs_of_pts==0)
+                ori_bg_num += ((~box_fg_flag) & (extend_box_idxs_of_pts==0)).sum()
+                ignore_flag = ~(fg_flag | bg_flag)
+                assert (fg_flag.sum() + bg_flag.sum() + ignore_flag.sum() == ignore_flag.shape[0])
+                # ignore_flag = (fg_flag ^ (extend_box_idxs_of_pts >= 0)) | ((pred_boxes_iou > neg_iou_threshold) ^ fg_flag)
+                point_cls_labels_single[ignore_flag] = -1
+            elif use_ball_constraint:
+                #* 前景点对应的gt包围框的中心点坐标
+                box_centers = gt_boxes[k][box_idxs_of_pts][:, 0:3].clone()
+                #* 该点和这个gt框的中心点坐标需要在半径内
+                ball_flag = ((box_centers - points_single).norm(dim=1) < central_radius)
+                #* 既在gt框内，和gt框的中心点距离小于central_radius， fg_flag为1
+                fg_flag = box_fg_flag & ball_flag & (pred_boxes_iou > pos_iou_threshold)
+                ori_fg_num += (box_fg_flag & ball_flag).sum()
+                #* 在gt框内，但是和中心点距离大于central_radius的点设置为忽略点，类别为-1
+                #* 背景点为不在包围框内, 且和gt的iou小于neg_iou_threshold
+                bg_flag = (~box_fg_flag) & (pred_boxes_iou < neg_iou_threshold)
+                ori_bg_num += (~box_fg_flag).sum()
+                ignore_flag = ~(fg_flag | bg_flag)
+                assert (fg_flag.sum() + bg_flag.sum() + ignore_flag.sum() == ignore_flag.shape[0])
+                # ignore_flag = (fg_flag ^ box_fg_flag) | (((pred_boxes_iou > neg_iou_threshold) ^ fg_flag))
+                point_cls_labels_single[ignore_flag] = -1
+            else:
+                raise NotImplementedError
+            
+            #* 前景点对应的gt包围框
+            gt_box_of_fg_points = gt_boxes[k][box_idxs_of_pts[fg_flag]]
+            #* 前景点生成的包围框的类别
+            point_cls_labels_single[fg_flag] = 1 if self.num_class == 1 else gt_box_of_fg_points[:, -1].long()
+            point_cls_labels[bs_mask] = point_cls_labels_single
+
+            #* 对于回归而言，只要在包围框里面的点都可以做回归
+            if gt_box_of_fg_points.shape[0] > 0:
+                point_reg_labels_single = point_reg_labels.new_zeros((bs_mask.sum(), self.box_coder.code_size))
+                #* 根据点的中心点坐标， 前景点对应的gt框的类别和属性得到需要回归的数据
+                fg_point_box_labels = self.box_coder.encode_torch(
+                    gt_boxes=gt_box_of_fg_points[:, :-1], points=points_single[fg_flag],
+                    gt_classes=gt_box_of_fg_points[:, -1].long()
+                )
+                point_reg_labels_single[fg_flag] = fg_point_box_labels
+                point_reg_labels[bs_mask] = point_reg_labels_single
+                #* 点对应的gt框
+                point_box_labels_single = point_box_labels.new_zeros((bs_mask.sum(), gt_boxes.size(2) - 1))
+                point_box_labels_single[fg_flag] = gt_box_of_fg_points[:, :-1]
+                point_box_labels[bs_mask] = point_box_labels_single
+
+        #* point_cls_labels: 每个点生成的预测框的类别
+        #* point_reg_labels: 每个点生成的预测框的回归值
+        #* point_box_labels: 每个点生成的预测框对应的gt框的值
+        targets_dict = {
+            'point_cls_labels': point_cls_labels,
+            'point_reg_labels': point_reg_labels,
+            'point_box_labels': point_box_labels,
+            'ori_fg_num': ori_fg_num,
+            'ori_bg_num': ori_bg_num,
+        }
+        
+        return targets_dict
+
 
     def assign_stack_targets_mask(self, points, gt_boxes, extend_gt_boxes=None,
                                   set_ignore_flag=True, use_ball_constraint=False, central_radius=2.0):
@@ -389,6 +512,8 @@ class PointHeadVote(PointHeadTemplate):
             'point_cls_labels': point_cls_labels,
             'point_reg_labels': point_reg_labels,
             'point_box_labels': point_box_labels,
+            'ori_fg_num': (point_cls_labels>0).sum(),
+            'ori_bg_num': (point_cls_labels==0).sum()
         }
         if(use_bg_points):
             targets_dict.update({'point_nearest_box_labels':point_nearest_box_labels})
@@ -451,6 +576,49 @@ class PointHeadVote(PointHeadTemplate):
             'point_reg_labels': point_reg_labels,
             'point_box_labels': point_box_labels
         }
+        return targets_dict
+    
+    def assign_confident_targets(self, input_dict):
+        """
+        Args:
+            input_dict:
+                batch_size:
+                point_coords: (N1 + N2 + N3 + ..., 4) [bs_idx, x, y, z]
+                gt_boxes (optional): (B, M, 8)
+        Returns:
+            point_part_labels: (N1 + N2 + N3 + ..., 3)
+        """
+        assign_method = self.model_cfg.TARGET_CONFIG.ASSIGN_METHOD  # mask or iou
+        if assign_method == 'mask':
+            points = input_dict['point_vote_coords']
+            pred_boxes = input_dict['point_box_preds']
+            gt_boxes = input_dict['gt_boxes']
+            assert points.shape.__len__() == 2, 'points.shape=%s' % str(points.shape)
+            assert gt_boxes.shape.__len__() == 3, 'gt_boxes.shape=%s' % str(gt_boxes.shape)
+            central_radius = self.model_cfg.TARGET_CONFIG.get('GT_CENTRAL_RADIUS', 2.0)
+            pos_iou_threshold = self.model_cfg.TARGET_CONFIG.POS_IOU_THRESHOLD
+            neg_iou_threshold = self.model_cfg.TARGET_CONFIG.NEG_IOU_THRESHOLD
+            targets_dict = self.assign_stack_confident_targets_mask(
+                points=points,  pred_boxes = pred_boxes, gt_boxes=gt_boxes,
+                set_ignore_flag=False, use_ball_constraint=True, central_radius=central_radius, 
+                pos_iou_threshold=pos_iou_threshold, neg_iou_threshold=neg_iou_threshold,
+            )
+        elif assign_method == 'iou':
+            points = input_dict['point_vote_coords']
+            pred_boxes = input_dict['point_box_preds']
+            gt_boxes = input_dict['gt_boxes']
+            assert points.shape.__len__() == 2, 'points.shape=%s' % str(points.shape)
+            assert gt_boxes.shape.__len__() == 3, 'gt_boxes.shape=%s' % str(gt_boxes.shape)
+            assert pred_boxes.shape.__len__() == 2, 'pred_boxes.shape=%s' % str(pred_boxes.shape)
+            pos_iou_threshold = self.model_cfg.TARGET_CONFIG.POS_IOU_THRESHOLD
+            neg_iou_threshold = self.model_cfg.TARGET_CONFIG.NEG_IOU_THRESHOLD
+            targets_dict = self.assign_stack_targets_iou(
+                points=points, pred_boxes=pred_boxes, gt_boxes=gt_boxes,
+                pos_iou_threshold=pos_iou_threshold, neg_iou_threshold=neg_iou_threshold
+            )
+        else:
+            raise NotImplementedError
+
         return targets_dict
 
     def assign_targets(self, input_dict):
@@ -629,7 +797,24 @@ class PointHeadVote(PointHeadTemplate):
         #* 标签>0是前景框， ==0是背景框
         positives = point_cls_labels > 0
         negatives = point_cls_labels == 0
-        cls_weights = positives * 1.0 + negatives * 1.0
+        #* 限制计算的背景点loss个数不超过前景点
+        if(self.model_cfg.TARGET_CONFIG.get('RESTRICTED_NEG_NUM', False)):
+            neg_num = negatives.sum()
+            pos_num = positives.sum()
+            if(neg_num > pos_num):
+                negatives_idxs = negatives.nonzero().squeeze(-1)
+                choosen_idx = np.random.choice(negatives_idxs.shape[0], (neg_num-pos_num).item(), replace=False)
+                negatives[negatives_idxs[choosen_idx]] = False
+                
+        scale_loss = self.model_cfg.TARGET_CONFIG.get('SCALE_LOSS', False)
+        ori_fg_num = self.forward_ret_dict['ori_fg_num']
+        cur_fg_num = positives.sum()
+        ori_bg_num = self.forward_ret_dict['ori_bg_num']
+        cur_bg_num = negatives.sum()
+        if(scale_loss):
+            cls_weights = positives * ori_fg_num/torch.clamp(cur_fg_num, min=1.0) + negatives * ori_bg_num/torch.clamp(cur_bg_num, min=1.0)
+        else:
+            cls_weights = positives * 1.0 + negatives * 1.0
         #* 转成one-hot编码
         one_hot_targets = point_cls_preds.new_zeros(*list(point_cls_labels.shape), self.num_class + 1)
         one_hot_targets.scatter_(-1, (point_cls_labels * (point_cls_labels >= 0).long()).unsqueeze(dim=-1).long(), 1.0)
@@ -683,26 +868,25 @@ class PointHeadVote(PointHeadTemplate):
             tb_dict = {}
         tb_dict.update({
             'point_pos_num': positives.sum().item(),
-            'point_negative_num': negatives.sum().item()
+            'point_negative_num': negatives.sum().item(),
+            'positives': positives,
+            'negatives': negatives,
+            'point_pos_num_differ': (ori_fg_num - cur_fg_num).item(),
+            'point_neg_num_differ': (ori_bg_num - cur_bg_num).item(),
         })
-        if(use_bg_points):
-            tb_dict.update({
-                # 'point_loss_cls_sub1':sum(point_loss_cls_sub1)/point_loss_cls_sub1.shape[0],
-                'positives': positives,
-                'negatives': negatives,
-                'positive_point_loss_cls': positive_point_loss_cls,
-                'negative_point_loss_cls': negative_point_loss_cls,
-                # 'point_loss_cls_cls': sum(point_loss_cls_cls)/point_loss_cls_cls.shape[0],
-            })
-            
-        
         return point_loss_cls, cls_weights, tb_dict
     def get_box_layer_loss(self, tb_dict=None):
         pos_mask = self.forward_ret_dict['point_cls_labels'] > 0
         point_reg_preds = self.forward_ret_dict['point_reg_preds']
         point_reg_labels = self.forward_ret_dict['point_reg_labels']
 
-        reg_weights = pos_mask.float()
+        ori_pos_num = self.forward_ret_dict['ori_fg_num']
+        cur_pos_num = pos_mask.sum()
+        scale_loss = self.model_cfg.TARGET_CONFIG.get('SCALE_LOSS', False)
+        if(scale_loss):
+            reg_weights = pos_mask.float() * ori_pos_num/torch.clamp(cur_pos_num, min=1.0)
+        else:
+            reg_weights = pos_mask.float()
 
         loss_weights_dict = self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS
         if tb_dict is None:
@@ -814,32 +998,30 @@ class PointHeadVote(PointHeadTemplate):
         
         point_loss_cls, cls_weights, tb_dict_1 = self.get_cls_layer_loss()
         
-        use_bg_points = self.model_cfg.TARGET_CONFIG.get('USE_BG_POINTS', False)
-        if(use_bg_points):
-            positive_point_loss_cls = tb_dict_1['positive_point_loss_cls']
-            negative_point_loss_cls = tb_dict_1['negative_point_loss_cls']
-            positives = tb_dict_1['positives']
-            negatives = tb_dict_1['negatives']
-            tb_dict_1.pop('positive_point_loss_cls')
-            tb_dict_1.pop('negative_point_loss_cls')
-            tb_dict_1.pop('positives')
-            tb_dict_1.pop('negatives')
-            positive_point_loss_cls = positive_point_loss_cls.sum() / torch.clamp(cls_weights[positives].sum(), min=1.0)
-            negative_point_loss_cls = negative_point_loss_cls.sum() / torch.clamp(cls_weights[negatives].sum(), min=1.0)
-            tb_dict.update({
-                'positive_point_loss_cls': positive_point_loss_cls.item(),
-                'negative_point_loss_cls': negative_point_loss_cls.item()
-            })
+        differ_pos_and_neg = self.model_cfg.TARGET_CONFIG.get('DIFFER_POS_AND_NEG', False)
         point_loss_box, box_weights, tb_dict_2 = self.get_box_layer_loss()
+        positives = tb_dict_1.pop('positives')
+        negatives = tb_dict_1.pop('negatives')
+        if(differ_pos_and_neg):
+            pos_point_loss_cls = point_loss_cls[positives].sum() / torch.clamp(positives.sum(), min=1.0)
+            negative_point_loss_cls = point_loss_cls[negatives].sum() / torch.clamp(negatives.sum(), min=1.0)
+            point_loss_box = point_loss_box.sum() / torch.clamp(box_weights.sum(), min=1.0)
+            
+            tb_dict.update({
+                'point_loss_vote': point_loss_vote.item(),
+                'pos_point_loss_cls': pos_point_loss_cls.item(),
+                'neg_point_loss_cls': negative_point_loss_cls.item(),
+                'point_loss_box': point_loss_box.item(),
 
-        point_loss_cls = point_loss_cls.sum() / torch.clamp(cls_weights.sum(), min=1.0)
-        point_loss_box = point_loss_box.sum() / torch.clamp(box_weights.sum(), min=1.0)
-        tb_dict.update({
-            'point_loss_vote': point_loss_vote.item(),
-            'point_loss_cls': point_loss_cls.item(),
-            'point_loss_box': point_loss_box.item(),
-
-        })
+            })
+        else:
+            point_loss_cls = point_loss_cls.sum() / torch.clamp(cls_weights.sum(), min=1.0)
+            point_loss_box = point_loss_box.sum() / torch.clamp(box_weights.sum(), min=1.0)
+            tb_dict.update({
+                'point_loss_vote': point_loss_vote.item(),
+                'point_loss_cls': point_loss_cls.item(),
+                'point_loss_box': point_loss_box.item(),
+            })
 
         point_loss = point_loss_vote + point_loss_cls + point_loss_box
         tb_dict.update(tb_dict_0)
@@ -938,7 +1120,7 @@ class PointHeadVote(PointHeadTemplate):
         #* point_coords是最后一个SA模块采样的点的坐标
         #* 输入的point_features是最后一个SA模块采样的点的特征
         #* 输出的point_feature，[batch_size, 点的特征, vote point的个数]
-        _, point_features, _ = self.SA_module(
+        _, point_features, _, idx_cnt = self.SA_module(
             point_coords,
             point_features,
             new_xyz=vote_coords
@@ -997,6 +1179,8 @@ class PointHeadVote(PointHeadTemplate):
             ret_dict['point_reg_labels'] = targets_dict['point_reg_labels']
             #* 每个点生成的预测框对应的gt框的属性
             ret_dict['point_box_labels'] = targets_dict['point_box_labels']
+            ret_dict['ori_fg_num'] = targets_dict['ori_fg_num']
+            ret_dict['ori_bg_num'] = targets_dict['ori_bg_num']
 
             if self.enable_sasa:
                 point_sasa_labels = self.loss_point_sasa(
@@ -1017,7 +1201,19 @@ class PointHeadVote(PointHeadTemplate):
             batch_dict['batch_cls_preds'] = point_cls_preds
             batch_dict['batch_box_preds'] = point_box_preds
             batch_dict['cls_preds_normalized'] = False
-
+        
+        if(self.only_cls_confident_points):
+            targets_dict = self.assign_confident_targets(batch_dict)
+            if(self.confident_points_flag or (targets_dict['point_cls_labels']>0).sum() > self.confident_points_per_batch * batch_dict['batch_size']):
+                self.confident_points_flag = True
+                #* 每个点生成的预测框的类别，0为背景框， -1为忽略框， 其他为对应的类别
+                ret_dict['point_cls_labels'] = targets_dict['point_cls_labels']
+                #* 每个点生成的预测框的回归真值
+                ret_dict['point_reg_labels'] = targets_dict['point_reg_labels']
+                #* 每个点生成的预测框对应的gt框的属性
+                ret_dict['point_box_labels'] = targets_dict['point_box_labels']
+                ret_dict['ori_fg_num'] = targets_dict['ori_fg_num']
+                ret_dict['ori_bg_num'] = targets_dict['ori_bg_num']
         self.forward_ret_dict = ret_dict
 
         return batch_dict

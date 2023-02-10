@@ -71,9 +71,9 @@ def analyze_log_file(log_file):
     print("cyclist_AP11", cyclist_11_result[2], cyclist_11_result[0], cyclist_11_result[1])
     print("cyclist_AP40", cyclist_40_result[2], cyclist_40_result[0], cyclist_40_result[1])
     
-            
+        
     
                 
 
 if __name__ == "__main__":
-    analyze_log_file("/home/zty/Project/DeepLearning/OpenPCDet/output/kitti_models/3dssd_sasa_use_all_backbone/origin/log_train_20230130-093422.txt")
+    analyze_log_file("/home/zty/Project/DeepLearning/OpenPCDet/output/kitti_models/3dssd_dsasa/version4/log_train_20230210-163503.txt")

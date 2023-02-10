@@ -7,6 +7,16 @@ from torch.autograd import Function, Variable
 from . import pointnet2_batch_cuda as pointnet2
 
 
+@torch.no_grad()
+def calc_dist_matrix_for_sampling(xyz: torch.Tensor, features: torch.Tensor = None,
+                                  gamma: float = 1.0):
+    dist = torch.cdist(xyz, xyz)
+    
+    if features is not None:
+        dist += torch.cdist(features, features) * gamma
+    
+    return dist
+
 class FarthestPointSampling(Function):
     @staticmethod
     def forward(ctx, xyz: torch.Tensor, npoint: int) -> torch.Tensor:
@@ -35,6 +45,25 @@ class FarthestPointSampling(Function):
 
 farthest_point_sample = furthest_point_sample = FarthestPointSampling.apply
 
+
+@torch.no_grad()
+def furthest_point_sample_matrix(matrix: torch.Tensor, npoint: int) -> torch.Tensor:
+    """
+    Uses iterative furthest point sampling to select a set of npoint features that have the largest
+    minimum distance with a pairwise distance matrix
+    :param matrix: (B, N, N) tensor of dist matrix
+    :param npoint: int, number of features in the sampled set
+    :return:
+         output: (B, npoint) tensor containing the set
+    """
+    assert matrix.is_contiguous()
+
+    B, N, _ = matrix.size()
+    output = torch.cuda.IntTensor(B, npoint)
+    temp = torch.cuda.FloatTensor(B, N).fill_(1e10)
+
+    pointnet2.furthest_point_sampling_matrix_wrapper(B, N, npoint, matrix, temp, output)
+    return output
 
 @torch.no_grad()
 def furthest_point_sample_weights(xyz: torch.Tensor, weights: torch.Tensor, npoint: int) -> torch.Tensor:
@@ -433,7 +462,7 @@ class QueryAndGroup(nn.Module):
         else:
             new_features = grouped_xyz
         
-        return new_features
+        return new_features, _
         
 class QueryAndGroupDilated(nn.Module):
     def __init__(self, radius_in: float, radius_out: float, nsample: int, use_xyz: bool = True,
@@ -587,7 +616,11 @@ class QueryAndGroupDilated(nn.Module):
         else:
             new_features = grouped_xyz
         
-        return new_features
+        """
+        Returns:
+            idx_cnt: (batch_size * n_sample)
+        """
+        return new_features, idx_cnt
 
 
 class GroupAll(nn.Module):

@@ -140,11 +140,13 @@ class PointNet2FSMSG(nn.Module):
         use_relative_direction_angle = self.model_cfg.SA_CONFIG.get("USE_RELATIVE_DIRECTION_ANGLE", False)
         use_absolute_direction_angle = self.model_cfg.SA_CONFIG.get("USE_ABSOLUTE_DIRECTION_ANGLE", False)
         use_sincos = self.model_cfg.SA_CONFIG.get("USE_SINCOS", False)
-        fusion_type = self.model_cfg.SA_CONFIG.get("FUSION_TYPE", None)
+        fusion_type = self.model_cfg.SA_CONFIG.get("FUSION_TYPE", ["concatation"] * \
+            self.model_cfg.SA_CONFIG.NPOINT_LIST.__len__())
         
         dilated_group = self.model_cfg.SA_CONFIG.get('DILATED_RADIUS_GROUP', False)
         skip_connection = self.model_cfg.SA_CONFIG.get('SKIP_CONNECTION', False)
         weight_gamma = self.model_cfg.SA_CONFIG.get('WEIGHT_GAMMA', 1.0)
+        weight_lambda = self.model_cfg.SA_CONFIG.get('WEIGHT_LAMBDA', 1.0)
 
         self.aggregation_mlps = self.model_cfg.SA_CONFIG.get('AGGREGATION_MLPS', None)
         self.confidence_mlps = self.model_cfg.SA_CONFIG.get('CONFIDENCE_MLPS', None)
@@ -202,6 +204,7 @@ class PointNet2FSMSG(nn.Module):
                     dilated_radius_group=dilated_group,
                     skip_connection=skip_connection,
                     weight_gamma=weight_gamma,
+                    weight_lambda = weight_lambda,
                     aggregation_mlp=aggregation_mlp,
                     confidence_mlp=confidence_mlp,
                     extra_dim_mlp=extra_dim_mlp,
@@ -271,16 +274,17 @@ class PointNet2FSMSG(nn.Module):
         #* l_xyz用来存储多次SA模块得到的采样点的坐标, 第0个是原始点的坐标
         #* l_features用来存储多次SA模块得到的采样点的特征, 第0个是原始点的特征
         #* l_scores用来存储多次SA模块得到的, 第0个是None
-        l_xyz, l_features, l_scores = [xyz], [features], [None]
+        l_xyz, l_features, l_scores, l_counts = [xyz], [features], [None], [None]
         for i in range(len(self.SA_modules)):
             #* li_xyz: 采样点的坐标
             #* li_features: 采样点的特征
             #* li_scores: 采样点的分数
-            li_xyz, li_features, li_scores = self.SA_modules[i](
-                l_xyz[i], l_features[i], scores=l_scores[i])
+            li_xyz, li_features, li_scores, li_counts = self.SA_modules[i](
+                l_xyz[i], l_features[i], scores=l_scores[i], counts=l_counts[i])
             l_xyz.append(li_xyz)
             l_features.append(li_features)
             l_scores.append(li_scores)
+            l_counts.append(li_counts)
 
         # prepare for confidence loss
         l_xyz_flatten, l_scores_flatten = [], []

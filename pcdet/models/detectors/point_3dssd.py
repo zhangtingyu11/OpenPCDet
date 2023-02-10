@@ -38,7 +38,7 @@ class Point3DSSD(Detector3DTemplate):
     def init_recall_record(self, metric, **kwargs):
         # initialize gt_num for all classes
         for cur_cls in range(len(self.class_names)):
-            metric['gt_num[%s]' % self.class_names[cur_cls]] = 0
+            metric['gt[%s]' % self.class_names[cur_cls]] = 0
 
         # initialize statistics of all sampling segments
         npoint_list = self.model_cfg.BACKBONE_3D.SA_CONFIG.NPOINT_LIST
@@ -88,10 +88,10 @@ class Point3DSSD(Detector3DTemplate):
 
         # initialize recall_dict
         if recall_dict.__len__() == 0:
-            recall_dict = {'gt_num': 0}
+            recall_dict = {'gt': 0}
             for cur_thresh in thresh_list:
-                recall_dict['recall_roi_%s' % (str(cur_thresh))] = 0
-                recall_dict['recall_rcnn_%s' % (str(cur_thresh))] = 0
+                recall_dict['roi_%s' % (str(cur_thresh))] = 0
+                recall_dict['rcnn_%s' % (str(cur_thresh))] = 0
             self.init_recall_record(recall_dict)  # init customized statistics
 
         cur_gt = gt_boxes
@@ -156,25 +156,25 @@ class Point3DSSD(Detector3DTemplate):
 
             for cur_thresh in thresh_list:
                 if iou3d_rcnn.shape[0] == 0:
-                    recall_dict['recall_rcnn_%s' % str(cur_thresh)] += 0
+                    recall_dict['rcnn_%s' % str(cur_thresh)] += 0
                 else:
                     rcnn_recalled = (iou3d_rcnn.max(dim=0)[0] > cur_thresh).sum().item()
-                    recall_dict['recall_rcnn_%s' % str(cur_thresh)] += rcnn_recalled
+                    recall_dict['rcnn_%s' % str(cur_thresh)] += rcnn_recalled
                 if rois is not None:
                     roi_recalled = (iou3d_roi.max(dim=0)[0] > cur_thresh).sum().item()
-                    recall_dict['recall_roi_%s' % str(cur_thresh)] += roi_recalled
+                    recall_dict['roi_%s' % str(cur_thresh)] += roi_recalled
 
             cur_gt_class = cur_gt[:, -1]
             for cur_cls in range(self.num_class):
                 cur_cls_gt_num = (cur_gt_class == cur_cls + 1).sum().item()
-                recall_dict['gt_num'] += cur_cls_gt_num
-                recall_dict['gt_num[%s]' % self.class_names[cur_cls]] += cur_cls_gt_num
+                recall_dict['gt'] += cur_cls_gt_num
+                recall_dict['gt[%s]' % self.class_names[cur_cls]] += cur_cls_gt_num
 
         return recall_dict
     
     def disp_recall_record(self, metric, logger, sample_num, **kwargs):
-        gt_num = metric['gt_num']
-        gt_num_cls = [metric['gt_num[%s]' % cur_cls] for cur_cls in self.class_names]
+        gt_num = metric['gt']
+        gt_num_cls = [metric['gt[%s]' % cur_cls] for cur_cls in self.class_names]
 
         # backbone
         for k in metric.keys():

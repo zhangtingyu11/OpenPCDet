@@ -66,8 +66,29 @@
             "justMyCode": true,
             "args":[
                 "--cfg_file",
-                "cfgs/kitti_models/3dssd_sasa_3classes_use_all.yaml"
+                "cfgs/kitti_models/3dssd_sasa_cls_confident_point.yaml"
+            ]
+        },
+        {
+            "name": "Test DSASA",
+            "type": "python",
+            "request": "launch",
+            "program": "test.py",
+            "cwd": "${workspaceFolder}/tools",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--cfg_file",
+                "cfgs/kitti_models/3dssd_sasa.yaml",
+                "--batch_size",
+                "8",
+                "--extra_tag",
+                "default",
+                "--ckpt",
+                "../output/kitti_models/3dssd_dsasa/origin/ckpt/checkpoint_epoch_80.pth"
             ]
         }
+
+        
     ]
 }
