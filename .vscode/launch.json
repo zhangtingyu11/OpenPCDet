@@ -87,7 +87,20 @@
                 "--ckpt",
                 "../output/kitti_models/3dssd_dsasa/origin/ckpt/checkpoint_epoch_80.pth"
             ]
-        }
+        },
+        {
+            "name": "Train DSASA",
+            "type": "python",
+            "request": "launch",
+            "program": "train.py",
+            "cwd": "${workspaceFolder}/tools",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--cfg_file",
+                "cfgs/kitti_models/3dssd_dsasa.yaml"
+            ]
+        },
 
         
     ]

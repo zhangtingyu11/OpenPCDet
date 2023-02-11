@@ -71,8 +71,11 @@ MODEL:
                    [[128, 128, 256], [128, 196, 256], [128, 256, 256]]]
             AGGREGATION_MLPS: [[64], [128], [256]]
             CONFIDENCE_MLPS: [[32], [64], []]
+            # USE_KDE: True
+            # USE_KDE_COUNT: True
+            USE_DENSITY_SIGMOID: True
             WEIGHT_GAMMA: 1.0
-            WEIGHT_LAMBDA: 0.2
+            WEIGHT_LAMBDA: 0.4
             DILATED_RADIUS_GROUP: True
 
     POINT_HEAD:
@@ -90,6 +93,8 @@ MODEL:
             NSAMPLE: [ 48, 64 ]
             MLPS: [[ 256, 256, 512 ],
                    [ 256, 512, 1024 ]]
+            # USE_KDE: True
+                
         
         SHARED_FC: [ 512, 256 ]
         CLS_FC: [ 128 ]

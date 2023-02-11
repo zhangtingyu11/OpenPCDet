@@ -76,4 +76,4 @@ def analyze_log_file(log_file):
                 
 
 if __name__ == "__main__":
-    analyze_log_file("/home/zty/Project/DeepLearning/OpenPCDet/output/kitti_models/3dssd_dsasa/version4/log_train_20230210-163503.txt")
+    analyze_log_file("/home/zty/Project/DeepLearning/OpenPCDet/output/kitti_models/3dssd_dsasa_use_all_backbone/origin/log_train_20230211-002242.txt")

@@ -43,6 +43,7 @@ class PointHeadVote(PointHeadTemplate):
             channel_out += mlps[idx][-1]
             
         use_density = self.model_cfg.SA_CONFIG.get("USE_DENSITY", False)
+        use_kde = self.model_cfg.SA_CONFIG.get("USE_KDE", False)
         use_distance_to_center = self.model_cfg.SA_CONFIG.get("USE_DISTANCE_TO_CENTER", False)
         use_relative_direction_angle = self.model_cfg.SA_CONFIG.get("USE_RELATIVE_DIRECTION_ANGLE", False)
         
@@ -53,6 +54,7 @@ class PointHeadVote(PointHeadTemplate):
             use_xyz=True,
             bn=use_bn,
             use_density = use_density,
+            use_kde = use_kde,
             use_distance_to_center = use_distance_to_center,
             use_relative_direction_angle = use_relative_direction_angle,
         )

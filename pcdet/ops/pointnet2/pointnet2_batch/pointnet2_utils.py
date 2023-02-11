@@ -5,6 +5,7 @@ import torch.nn as nn
 from torch.autograd import Function, Variable
 
 from . import pointnet2_batch_cuda as pointnet2
+from ....utils import kde_utils
 
 
 @torch.no_grad()
@@ -321,6 +322,8 @@ ball_query_dilated = BallQueryDilated.apply
 class QueryAndGroup(nn.Module):
     def __init__(self, radius: float, nsample: int, use_xyz: bool = True,
                  use_density = False,
+                 use_kde = False,
+                 use_kde_count = False,
                  use_distance_to_center = False,
                  use_distance_to_origin = False,
                  use_absolute_direction_angle = False,
@@ -337,6 +340,10 @@ class QueryAndGroup(nn.Module):
         super().__init__()
         self.radius, self.nsample, self.use_xyz = radius, nsample, use_xyz
         self.use_density = use_density
+        self.use_kde = use_kde
+        self.use_kde_count = use_kde_count
+        #* self.kde and self.use_density should not be True at the same time
+        assert (not self.use_kde or not self.use_density)
         self.use_distance_to_center = use_distance_to_center
         self.use_distance_to_origin = use_distance_to_origin
         self.use_absolute_direction_angle = use_absolute_direction_angle
@@ -364,6 +371,8 @@ class QueryAndGroup(nn.Module):
                 input_channels+=1
             if(use_distance_to_origin):
                 input_channels+=1
+            if(use_kde):
+                input_channels+=1
             extra_dim_layers = []
             extra_dim_mlp = [input_channels] + extra_dim_mlp
             for i in range(len(extra_dim_mlp)-1):
@@ -373,6 +382,8 @@ class QueryAndGroup(nn.Module):
                     nn.ReLU()
                 ])
             self.extra_dim_mlp = nn.Sequential(*extra_dim_layers)
+        if self.use_kde or self.use_kde_count:
+            self.kde = kde_utils.GaussianKernelDensityEstimation(bandwidth=0.25)
 
     def forward(self, xyz: torch.Tensor, new_xyz: torch.Tensor, features: torch.Tensor = None):
         """
@@ -382,9 +393,9 @@ class QueryAndGroup(nn.Module):
         :return:
             new_features: (B, 3 + C, npoint, nsample)
         """
-        # idx_cnt, idx = ball_query(self.radius, self.nsample, xyz, new_xyz)
         idx = ball_query(self.radius, self.nsample, xyz, new_xyz)
-        idx_cnt = (idx==idx[:,:,0].unsqueeze(-1)).sum(-1)
+        batch_size = idx.shape[0]
+        idx_cnt =  idx.new_zeros((idx.shape[:2])).fill_(idx.shape[-1]) - (idx==idx[:,:,0].unsqueeze(-1)).sum(-1) + 1
         xyz_trans = xyz.transpose(1, 2).contiguous()
         grouped_xyz = grouping_operation(xyz_trans, idx)  # (B, 3, npoint, nsample)
         if(self.use_distance_to_origin):
@@ -397,6 +408,23 @@ class QueryAndGroup(nn.Module):
         #* 将group内的点减去当前的采样点, [batch_size ,3 , 采样的点数， 每个采样点周围group的点数]
         grouped_xyz -= new_xyz.transpose(1, 2).unsqueeze(-1)
         
+        if(self.use_kde or self.use_kde_count):
+            with torch.no_grad():
+                new_grouped_xyz = grouped_xyz.permute(0, 2, 1, 3)
+                new_grouped_xyz = new_grouped_xyz.reshape(-1, 3, new_grouped_xyz.shape[-1]).contiguous()
+                #* grouped_xyz为[grid point个数, nsample, 3]
+                grouped_xyz_permuted = new_grouped_xyz.permute(0, 2, 1)
+                #* 全是True
+                kde_mask = idx!=idx[:,:,0].unsqueeze(-1)
+                kde_mask[:,:,0] = True
+                kde_mask = kde_mask.view(-1, kde_mask.shape[-1])
+                #* grouped_density为[]
+                grouped_density = self.kde.score_samples(grouped_xyz_permuted, kde_mask, grouped_xyz_permuted).unsqueeze(-2)
+                grouped_density = grouped_density.view(batch_size, -1, 1, grouped_density.shape[-1]).permute(0, 2, 1, 3).contiguous()
+                if(self.use_kde):
+                    grouped_xyz = torch.cat([grouped_xyz, grouped_density], dim = 1)
+                
+        
         if(self.use_absolute_direction_angle):
             if(self.use_sincos):
                 grouped_xyz = torch.cat([grouped_xyz,
@@ -405,7 +433,7 @@ class QueryAndGroup(nn.Module):
                             torch.sin(grouped_abs_xyz_angle_2),
                             torch.cos(grouped_abs_xyz_angle_2),
                             torch.sin(grouped_abs_xyz_angle_3),
-                            torch.cos(grouped_abs_xyz_angle_3)])
+                            torch.cos(grouped_abs_xyz_angle_3)], dim=1)
             else:
                 grouped_xyz = torch.cat([grouped_xyz, 
                                 grouped_abs_xyz_angle_1, 
@@ -462,7 +490,10 @@ class QueryAndGroup(nn.Module):
         else:
             new_features = grouped_xyz
         
-        return new_features, _
+        if(self.use_kde_count):
+            #* 返回ball query center的密度
+            return new_features, grouped_density[:, :, :, 0].view(batch_size, -1)
+        return new_features, idx_cnt
         
 class QueryAndGroupDilated(nn.Module):
     def __init__(self, radius_in: float, radius_out: float, nsample: int, use_xyz: bool = True,

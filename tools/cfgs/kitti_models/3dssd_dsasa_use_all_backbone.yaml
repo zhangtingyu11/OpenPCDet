@@ -63,7 +63,7 @@ MODEL:
         SA_CONFIG:
             NPOINT_LIST: [[4096], [512, 512], [256, 256]]
             SAMPLE_RANGE_LIST: [[[0, 16384]], [[0, 4096], [0, 4096]], [[0, 512], [512, 1024]]]
-            SAMPLE_METHOD_LIST: [['d-fps'], ['s-fps', 'd-fps'], ['s-fps', 'd-fps']]
+            SAMPLE_METHOD_LIST: [['d-fps'], ['ds-fps', 'd-fps'], ['ds-fps', 'd-fps']]
             RADIUS: [[0.2, 0.4, 0.8], [0.4, 0.8, 1.6], [1.6, 3.2, 4.8]]
             NSAMPLE: [[32, 32, 64], [32, 32, 64], [32, 32, 64]]
             MLPS: [[[16, 16, 32], [16, 16, 32], [32, 32, 64]],
@@ -72,6 +72,17 @@ MODEL:
             AGGREGATION_MLPS: [[64], [128], [256]]
             CONFIDENCE_MLPS: [[32], [64], []]
             WEIGHT_GAMMA: 1.0
+            WEIGHT_LAMBDA: 0.1
+            FUSION_TYPE: ['concatation', 'add', 'add'] #'add' or 'concatation'
+            USE_DENSITY: True
+            USE_RELATIVE_DIRECTION_ANGLE: True
+            USE_ABSOLUTE_DIRECTION_ANGLE: True
+            USE_SINCOS: True
+            USE_DISTANCE_TO_CENTER: True
+            USE_DISTANCE_TO_ORIGIN: True
+            EXTRA_DIM_MLPS: [[],
+                             [[64], [64], [64]],
+                             [[128], [128], [128]]]
             DILATED_RADIUS_GROUP: True
 
     POINT_HEAD:
@@ -96,7 +107,6 @@ MODEL:
 
         TARGET_CONFIG:
             VOTE_EXTRA_WIDTH: [0.1, 0.1, 0.1]
-            VOTE_REDUCED_WIDTH: [0.1, 0.1, 0.1]
             ASSIGN_METHOD: mask
             GT_CENTRAL_RADIUS: 10.0
             BOX_CODER: PointBinResidualCoder
@@ -112,7 +122,6 @@ MODEL:
             LOSS_SASA_CONFIG: {
                 'set_ignore_flag': True,
                 'extra_width': [1.0, 1.0, 1.0],
-                # 'reduced_width': [0.1, 0.1, 0.1],
                 'layer_weights': [0.01, 0.1, 0]
             }
             AXIS_ALIGNED_IOU_LOSS_REGULARIZATION: True
@@ -143,7 +152,7 @@ MODEL:
 
 
 OPTIMIZATION:
-    BATCH_SIZE_PER_GPU: 16
+    BATCH_SIZE_PER_GPU: 8
     NUM_EPOCHS: 80
 
     OPTIMIZER: adam_onecycle

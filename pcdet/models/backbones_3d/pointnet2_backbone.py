@@ -134,7 +134,10 @@ class PointNet2FSMSG(nn.Module):
         
         use_xyz = self.model_cfg.SA_CONFIG.get('USE_XYZ', True)
         
+        use_density_sigmoid = self.model_cfg.SA_CONFIG.get('USE_DENSITY_SIGMOID', False)
         use_density = self.model_cfg.SA_CONFIG.get("USE_DENSITY", False)
+        use_kde = self.model_cfg.SA_CONFIG.get("USE_KDE", False)
+        use_kde_count = self.model_cfg.SA_CONFIG.get("USE_KDE_COUNT", False)
         use_distance_to_center = self.model_cfg.SA_CONFIG.get("USE_DISTANCE_TO_CENTER", False)
         use_distance_to_origin = self.model_cfg.SA_CONFIG.get("USE_DISTANCE_TO_ORIGIN", False)
         use_relative_direction_angle = self.model_cfg.SA_CONFIG.get("USE_RELATIVE_DIRECTION_ANGLE", False)
@@ -196,6 +199,8 @@ class PointNet2FSMSG(nn.Module):
                     fusion_type = fusion_type[k],
                     use_xyz=use_xyz,
                     use_density=use_density,
+                    use_kde=use_kde,
+                    use_kde_count = use_kde_count,
                     use_distance_to_center=use_distance_to_center,
                     use_distance_to_origin=use_distance_to_origin,
                     use_relative_direction_angle=use_relative_direction_angle,
@@ -203,6 +208,7 @@ class PointNet2FSMSG(nn.Module):
                     use_sincos=use_sincos,
                     dilated_radius_group=dilated_group,
                     skip_connection=skip_connection,
+                    use_density_sigmoid=use_density_sigmoid,
                     weight_gamma=weight_gamma,
                     weight_lambda = weight_lambda,
                     aggregation_mlp=aggregation_mlp,

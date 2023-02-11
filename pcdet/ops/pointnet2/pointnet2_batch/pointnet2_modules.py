@@ -173,7 +173,14 @@ class _PointnetSAModuleFSBase(nn.Module):
                     scores_slice = scores_slice.sigmoid() ** self.weight_gamma
                     counts_slice = \
                         counts[:, self.sample_range_list[i][0]:self.sample_range_list[i][1]].contiguous()
-                    scores_slice = torch.mul(scores_slice, (1-torch.sigmoid(torch.log10(counts_slice))) ** self.weight_lambda)
+                    if(self.use_kde_count):
+                        scores_slice = torch.mul(scores_slice, (torch.exp(-counts_slice)) ** self.weight_lambda)
+                    else:
+                        if(self.use_density_sigmoid):
+                            scores_slice = torch.mul(scores_slice, (1-torch.sigmoid(torch.log10(counts_slice))) ** self.weight_lambda)
+                        else:
+                            scores_slice = torch.mul(scores_slice, (torch.exp(-torch.log10(counts_slice+1))) ** self.weight_lambda)
+                    
                     sample_idx = pointnet2_utils.furthest_point_sample_weights(
                         xyz_slice,
                         scores_slice,
@@ -272,6 +279,8 @@ class PointnetSAModuleFSMSG(_PointnetSAModuleFSBase):
                  bn: bool = True,
                  use_xyz: bool = True,
                  use_density: bool = False,
+                 use_kde: bool = False,
+                 use_kde_count: bool = False,
                  use_distance_to_center: bool = False,
                  use_distance_to_origin: bool = False,
                  use_relative_direction_angle: bool = False,
@@ -280,6 +289,7 @@ class PointnetSAModuleFSMSG(_PointnetSAModuleFSBase):
                  pool_method='max_pool',
                  dilated_radius_group: bool = False,
                  skip_connection: bool = False,
+                 use_density_sigmoid: bool = False,
                  weight_gamma: float = 1.0,
                  weight_lambda: float = 1.0,
                  aggregation_mlp: List[int] = None,
@@ -318,6 +328,8 @@ class PointnetSAModuleFSMSG(_PointnetSAModuleFSBase):
         self.radii = radii
         self.groupers = nn.ModuleList()
         self.mlps = nn.ModuleList()
+        self.use_kde_count  = use_kde_count
+        self.use_density_sigmoid = use_density_sigmoid
 
         former_radius = 0.0
         in_channels, out_channels = 0, 0
@@ -350,6 +362,8 @@ class PointnetSAModuleFSMSG(_PointnetSAModuleFSBase):
                 self.groupers.append(
                     pointnet2_utils.QueryAndGroup(radius, nsample, use_xyz=use_xyz,
                                                          use_density = use_density, 
+                                                         use_kde = use_kde,
+                                                         use_kde_count = use_kde_count,
                                                          use_distance_to_center = use_distance_to_center,
                                                          use_distance_to_origin = use_distance_to_origin,
                                                          use_relative_direction_angle = use_relative_direction_angle,
@@ -368,6 +382,8 @@ class PointnetSAModuleFSMSG(_PointnetSAModuleFSBase):
                     if use_xyz:
                         mlp_spec[0] += 3
                     if use_density:
+                        mlp_spec[0] += 1
+                    if use_kde:
                         mlp_spec[0] += 1
                     if use_relative_direction_angle:
                         if use_sincos:
