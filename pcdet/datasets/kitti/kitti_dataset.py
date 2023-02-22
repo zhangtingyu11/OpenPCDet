@@ -274,7 +274,7 @@ class KittiDataset(DatasetTemplate):
             info = infos[k]
             sample_idx = info['point_cloud']['lidar_idx']
             points = self.get_lidar(sample_idx)
-            annos = ['annos']
+            annos = info['annos']
             names = annos['name']
             difficulty = annos['difficulty']
             bbox = annos['bbox']

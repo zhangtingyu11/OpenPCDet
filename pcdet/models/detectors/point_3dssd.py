@@ -90,8 +90,8 @@ class Point3DSSD(Detector3DTemplate):
         if recall_dict.__len__() == 0:
             recall_dict = {'gt': 0}
             for cur_thresh in thresh_list:
-                recall_dict['roi_%s' % (str(cur_thresh))] = 0
-                recall_dict['rcnn_%s' % (str(cur_thresh))] = 0
+                recall_dict['recall_roi_%s' % (str(cur_thresh))] = 0
+                recall_dict['recall_rcnn_%s' % (str(cur_thresh))] = 0
             self.init_recall_record(recall_dict)  # init customized statistics
 
         cur_gt = gt_boxes
@@ -156,13 +156,13 @@ class Point3DSSD(Detector3DTemplate):
 
             for cur_thresh in thresh_list:
                 if iou3d_rcnn.shape[0] == 0:
-                    recall_dict['rcnn_%s' % str(cur_thresh)] += 0
+                    recall_dict['recall_rcnn_%s' % str(cur_thresh)] += 0
                 else:
                     rcnn_recalled = (iou3d_rcnn.max(dim=0)[0] > cur_thresh).sum().item()
-                    recall_dict['rcnn_%s' % str(cur_thresh)] += rcnn_recalled
+                    recall_dict['recall_rcnn_%s' % str(cur_thresh)] += rcnn_recalled
                 if rois is not None:
                     roi_recalled = (iou3d_roi.max(dim=0)[0] > cur_thresh).sum().item()
-                    recall_dict['roi_%s' % str(cur_thresh)] += roi_recalled
+                    recall_dict['recall_roi_%s' % str(cur_thresh)] += roi_recalled
 
             cur_gt_class = cur_gt[:, -1]
             for cur_cls in range(self.num_class):

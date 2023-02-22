@@ -75,7 +75,7 @@ MODEL:
             # USE_KDE_COUNT: True
             USE_DENSITY_SIGMOID: True
             WEIGHT_GAMMA: 1.0
-            WEIGHT_LAMBDA: 0.4
+            WEIGHT_LAMBDA: 0.6
             DILATED_RADIUS_GROUP: True
 
     POINT_HEAD:

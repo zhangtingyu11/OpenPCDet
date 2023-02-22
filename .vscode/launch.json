@@ -98,7 +98,8 @@
             "justMyCode": true,
             "args":[
                 "--cfg_file",
-                "cfgs/kitti_models/3dssd_dsasa.yaml"
+                "cfgs/kitti_models/3dssd_dsasa.yaml",
+                "--fix_random_seed"
             ]
         },
 
