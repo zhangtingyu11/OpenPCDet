@@ -177,7 +177,10 @@ class _PointnetSAModuleFSBase(nn.Module):
                         scores_slice = torch.mul(scores_slice, (torch.exp(-counts_slice)) ** self.weight_lambda)
                     else:
                         if(self.use_density_sigmoid):
-                            scores_slice = torch.mul(scores_slice, (1-torch.sigmoid(torch.log10(counts_slice))) ** self.weight_lambda)
+                            if(self.positive_corr):
+                                scores_slice = torch.mul(scores_slice, (torch.sigmoid(torch.log10(counts_slice))) ** self.weight_lambda)
+                            else:
+                                scores_slice = torch.mul(scores_slice, (1-torch.sigmoid(torch.log10(counts_slice))) ** self.weight_lambda)
                         else:
                             scores_slice = torch.mul(scores_slice, (torch.exp(-torch.log10(counts_slice+1))) ** self.weight_lambda)
                     
@@ -303,6 +306,7 @@ class PointnetSAModuleFSMSG(_PointnetSAModuleFSBase):
                  weight_gamma: float = 1.0,
                  weight_lambda: float = 1.0,
                  weight_alpha: float = 1.0, 
+                 positive_corr: bool = False,
                  aggregation_mlp: List[int] = None,
                  confidence_mlp: List[int] = None,
                  extra_dim_mlp: List[int] = None,
@@ -428,6 +432,7 @@ class PointnetSAModuleFSMSG(_PointnetSAModuleFSBase):
         self.weight_gamma = weight_gamma
         self.weight_lambda = weight_lambda
         self.weight_alpha = weight_alpha
+        self.positive_corr = positive_corr
 
         if skip_connection:
             out_channels += in_channels
