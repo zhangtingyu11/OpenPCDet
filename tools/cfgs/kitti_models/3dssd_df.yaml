@@ -1,4 +1,4 @@
-CLASS_NAMES: ['Car', 'Pedestrian', 'Cyclist']  # 'Pedestrain', 'Cyclist'
+CLASS_NAMES: ['Car']  # 'Pedestrain', 'Cyclist'
 
 DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/kitti_dataset.yaml
@@ -11,11 +11,11 @@ DATA_CONFIG:
                 DB_INFO_PATH:
                     - kitti_dbinfos_train.pkl
                 PREPARE: {
-                    filter_by_min_points: [ 'Car:5', 'Pedestrian:10', 'Cyclist:10'], 
+                    filter_by_min_points: [ 'Car:5' ],  # 'Pedestrian:10', 'Cyclist:10'
                     filter_by_difficulty: [ -1 ],
                 }
 
-                SAMPLE_GROUPS: [ 'Car: 15', 'Pedestrian:8', 'Cyclist:8']  # 'Pedestrian:8', 'Cyclist:8'
+                SAMPLE_GROUPS: [ 'Car: 15' ]  # 'Pedestrian:8', 'Cyclist:8'
                 NUM_POINT_FEATURES: 4
                 DATABASE_WITH_FAKELIDAR: False
                 REMOVE_EXTRA_WIDTH: [ 0.0, 0.0, 0.0 ]
@@ -63,16 +63,16 @@ MODEL:
         SA_CONFIG:
             NPOINT_LIST: [[4096], [512, 512], [256, 256]]
             SAMPLE_RANGE_LIST: [[[0, 16384]], [[0, 4096], [0, 4096]], [[0, 512], [512, 1024]]]
-            SAMPLE_METHOD_LIST: [['d-fps'], ['s-fps', 'd-fps'], ['s-fps', 'd-fps']]
+            SAMPLE_METHOD_LIST: [['d-fps'], ['df-fps', 'd-fps'], ['df-fps', 'd-fps']]
             RADIUS: [[0.2, 0.4, 0.8], [0.4, 0.8, 1.6], [1.6, 3.2, 4.8]]
             NSAMPLE: [[32, 32, 64], [32, 32, 64], [32, 32, 64]]
             MLPS: [[[16, 16, 32], [16, 16, 32], [32, 32, 64]],
                    [[64, 64, 128], [64, 64, 128], [64, 96, 128]],
                    [[128, 128, 256], [128, 196, 256], [128, 256, 256]]]
             AGGREGATION_MLPS: [[64], [128], [256]]
-            CONFIDENCE_MLPS: [[32], [64], []]
             WEIGHT_GAMMA: 1.0
-            DILATED_RADIUS_GROUP: False
+            WEIGHT_ALPHA: 1.0
+            DILATED_RADIUS_GROUP: True
 
     POINT_HEAD:
         NAME: PointHeadVote
@@ -96,7 +96,6 @@ MODEL:
 
         TARGET_CONFIG:
             VOTE_EXTRA_WIDTH: [0.1, 0.1, 0.1]
-            VOTE_REDUCED_WIDTH: [0.1, 0.1, 0.1]
             ASSIGN_METHOD: mask
             GT_CENTRAL_RADIUS: 10.0
             BOX_CODER: PointBinResidualCoder
@@ -109,12 +108,6 @@ MODEL:
         LOSS_CONFIG:
             LOSS_CLS: WeightedBinaryCrossEntropy
             LOSS_REG: WeightedSmoothL1Loss
-            LOSS_SASA_CONFIG: {
-                'set_ignore_flag': True,
-                'extra_width': [1.0, 1.0, 1.0],
-                # 'reduced_width': [0.1, 0.1, 0.1],
-                'layer_weights': [0.01, 0.1, 0]
-            }
             AXIS_ALIGNED_IOU_LOSS_REGULARIZATION: True
             CORNER_LOSS_REGULARIZATION: True
             LOSS_WEIGHTS: {

@@ -102,6 +102,32 @@
                 "--fix_random_seed"
             ]
         },
+        {
+            "name": "Train 3DSSD",
+            "type": "python",
+            "request": "launch",
+            "program": "train.py",
+            "cwd": "${workspaceFolder}/tools",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--cfg_file",
+                "cfgs/kitti_models/3dssd.yaml"
+            ]
+        },
+        {
+            "name": "Train DF3DSSD",
+            "type": "python",
+            "request": "launch",
+            "program": "train.py",
+            "cwd": "${workspaceFolder}/tools",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--cfg_file",
+                "cfgs/kitti_models/3dssd_df.yaml"
+            ]
+        },
 
         
     ]

@@ -150,6 +150,7 @@ class PointNet2FSMSG(nn.Module):
         skip_connection = self.model_cfg.SA_CONFIG.get('SKIP_CONNECTION', False)
         weight_gamma = self.model_cfg.SA_CONFIG.get('WEIGHT_GAMMA', 1.0)
         weight_lambda = self.model_cfg.SA_CONFIG.get('WEIGHT_LAMBDA', 1.0)
+        weight_alpha = self.model_cfg.SA_CONFIG.get('WEIGHT_ALPHA', 1.0)
 
         self.aggregation_mlps = self.model_cfg.SA_CONFIG.get('AGGREGATION_MLPS', None)
         self.confidence_mlps = self.model_cfg.SA_CONFIG.get('CONFIDENCE_MLPS', None)
@@ -211,6 +212,7 @@ class PointNet2FSMSG(nn.Module):
                     use_density_sigmoid=use_density_sigmoid,
                     weight_gamma=weight_gamma,
                     weight_lambda = weight_lambda,
+                    weight_alpha = weight_alpha,
                     aggregation_mlp=aggregation_mlp,
                     confidence_mlp=confidence_mlp,
                     extra_dim_mlp=extra_dim_mlp,

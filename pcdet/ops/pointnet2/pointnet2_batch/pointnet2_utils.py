@@ -18,6 +18,19 @@ def calc_dist_matrix_for_sampling(xyz: torch.Tensor, features: torch.Tensor = No
     
     return dist
 
+
+@torch.no_grad()
+def calc_dist_matrix_for_sampling_with_density(xyz: torch.Tensor, features: torch.Tensor = None, density: torch.Tensor = None,
+                                  gamma: float = 1.0, alpha: float = 1.0):
+    dist = torch.cdist(xyz, xyz)
+    
+    if features is not None:
+        dist += torch.cdist(features, features) * gamma
+    
+    #* (B * N * N ) * (B * 1 * N) = (B * N * N)
+    dist *= (density**alpha)
+    return dist
+
 class FarthestPointSampling(Function):
     @staticmethod
     def forward(ctx, xyz: torch.Tensor, npoint: int) -> torch.Tensor:

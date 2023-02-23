@@ -189,7 +189,7 @@ class _PointnetSAModuleFSBase(nn.Module):
                 elif self.sample_method_list[i] == 'df-fps':
                     features_slice = features[:, :, self.sample_range_list[i][0]:self.sample_range_list[i][1]]
                     counts_slice = counts[:, self.sample_range_list[i][0]:self.sample_range_list[i][1]].contiguous()
-                    density = torch.sigmoid(torch.log10(counts_slice)).unsqueeze(1)
+                    density = torch.sigmoid(counts_slice).unsqueeze(1)
                     dist_matrix = pointnet2_utils.calc_dist_matrix_for_sampling_with_density(xyz_slice,
                                                                                 features_slice.permute(0, 2, 1),
                                                                                 density,
