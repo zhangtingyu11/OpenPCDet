@@ -26,4 +26,10 @@ int farthest_point_sampling_wrapper(int b, int n, int m,
 void farthest_point_sampling_kernel_launcher(int b, int n, int m,
     const float *dataset, float *temp, int *idxs);
 
+int furthest_point_sampling_matrix_wrapper(int b, int n, int m, 
+    at::Tensor matrix_tensor, at::Tensor temp_tensor, at::Tensor idx_tensor);
+
+void furthest_point_sampling_matrix_kernel_launcher(int b, int n, int m, 
+    const float *matrix, float *temp, int *idxs);
+
 #endif

@@ -18,7 +18,7 @@
             ]
         },
         {
-            "name": "Train PointRCNN",
+            "name": "Train 3DSSD",
             "type": "python",
             "request": "launch",
             "program": "train.py",
@@ -27,7 +27,7 @@
             "justMyCode": true,
             "args":[
                 "--cfg_file",
-                "cfgs/kitti_models/pointrcnn.yaml"
+                "cfgs/kitti_models/3dssd.yaml"
             ]
         }
     ]
