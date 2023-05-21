@@ -29,6 +29,19 @@
                 "--cfg_file",
                 "cfgs/kitti_models/pointrcnn.yaml"
             ]
+        },
+        {
+            "name": "Train VoxelRCNN",
+            "type": "python",
+            "request": "launch",
+            "program": "train.py",
+            "cwd": "${workspaceFolder}/tools",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--cfg_file",
+                "cfgs/kitti_models/voxel_rcnn_car.yaml"
+            ]
         }
     ]
 }

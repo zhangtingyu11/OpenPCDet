@@ -209,7 +209,7 @@ class DataProcessor(object):
 
         points = data_dict['points']
         voxel_output = self.voxel_generator.generate(points)
-        #* voxels: 非空voxel个数(不超过最大voxel个数) * voxel中最大点个数 * 点特征维度
+        #* voxels: 非空voxel个数(不超过最大voxel个数) * voxel中最大点个数 * 点特征维度, 如果不足最大点个数，就用0补全
         #* coordinates: voxel的索引, 非空voxel个数 * 3, [zidx, yidx, xidx]
         #* num_points: 非空voxel中的点个数(不超过voxel中最大点个数), 非空voxel个数
         voxels, coordinates, num_points = voxel_output
