@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Current File",
+            "name": "Train Second",
             "type": "python",
             "request": "launch",
             "cwd":"${workspaceFolder}/tools",
@@ -14,7 +14,7 @@
             "justMyCode": true,
             "args":[
                 "--cfg_file",
-                "cfgs/kitti_model/second.yaml"
+                "cfgs/kitti_models/second.yaml"
             ]
         }
     ]
