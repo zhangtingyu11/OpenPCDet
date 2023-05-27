@@ -5,11 +5,10 @@ import torch.nn as nn
 import numpy as np
 from ...ops.iou3d_nms import iou3d_nms_utils
 from ...utils.spconv_utils import find_all_spconv_keys
-from .. import backbones_2d, backbones_3d, dense_heads, roi_heads
+from .. import backbones_2d, backbones_3d, dense_heads, roi_heads, fusion_heads
 from ..backbones_2d import map_to_bev
 from ..backbones_3d import pfe, vfe
 from ..model_utils import model_nms_utils
-
 
 class Detector3DTemplate(nn.Module):
     def __init__(self, model_cfg, num_class, dataset):
@@ -22,7 +21,8 @@ class Detector3DTemplate(nn.Module):
 
         self.module_topology = [
             'vfe', 'backbone_3d', 'map_to_bev_module', 'pfe',
-            'backbone_2d', 'dense_head',  'point_head', 'roi_head'
+            'backbone_2d', 'dense_head',  'point_head', 'roi_head',
+            'fusion_head'
         ]
 
     @property
@@ -171,6 +171,18 @@ class Detector3DTemplate(nn.Module):
 
         model_info_dict['module_list'].append(point_head_module)
         return point_head_module, model_info_dict
+
+    def build_fusion_head(self, model_info_dict):
+        if self.model_cfg.get('FUSION_HEAD', None) is None:
+            return None, model_info_dict
+        fusion_head_module = fusion_heads.__all__[self.model_cfg.FUSION_HEAD.NAME](
+            model_cfg=self.model_cfg.FUSION_HEAD,
+            input_channels=model_info_dict['num_point_features'],
+            num_class=self.num_class if not self.model_cfg.FUSION_HEAD.CLASS_AGNOSTIC else 1,
+        )
+
+        model_info_dict['module_list'].append(fusion_head_module)
+        return fusion_head_module, model_info_dict
 
     def forward(self, **kwargs):
         raise NotImplementedError

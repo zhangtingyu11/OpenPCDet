@@ -1,5 +1,6 @@
 import copy
 import pickle
+import torch
 
 import numpy as np
 from skimage import io
@@ -383,6 +384,7 @@ class KittiDataset(DatasetTemplate):
         input_dict = {
             'frame_id': sample_idx,
             'calib': calib,
+            'calib_matrix': calib.P2.T,
         }
 
         if 'annos' in info:
