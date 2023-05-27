@@ -16,6 +16,19 @@
                 "--cfg_file",
                 "cfgs/kitti_models/second.yaml"
             ]
+        },
+        {
+            "name": "Train Second New Assigner",
+            "type": "python",
+            "request": "launch",
+            "cwd":"${workspaceFolder}/tools",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--cfg_file",
+                "cfgs/kitti_models/second_new_assigner.yaml"
+            ]
         }
     ]
 }

@@ -20,9 +20,15 @@ class AxisAlignedTargetAssigner(object):
         self.norm_by_num_examples = anchor_target_cfg.NORM_BY_NUM_EXAMPLES
         self.matched_thresholds = {}
         self.unmatched_thresholds = {}
+        self.alpha = {}
+        self.beta = {}
+        self.gamma = {}
         for config in anchor_generator_cfg:
             self.matched_thresholds[config['class_name']] = config['matched_threshold']
             self.unmatched_thresholds[config['class_name']] = config['unmatched_threshold']
+            self.alpha[config['class_name']] = config.get('alpha', 0)
+            self.beta[config['class_name']] = config.get('beta', 0)
+            self.gamma[config['class_name']] = config.get('gamma', 0)
 
         self.use_multihead = model_cfg.get('USE_MULTIHEAD', False)
         # self.separate_multihead = model_cfg.get('SEPARATE_MULTIHEAD', False)
@@ -85,7 +91,10 @@ class AxisAlignedTargetAssigner(object):
                     cur_gt[mask],   
                     gt_classes=selected_classes,
                     matched_threshold=self.matched_thresholds[anchor_class_name],   #* 有匹配的threshold和不匹配的threshold
-                    unmatched_threshold=self.unmatched_thresholds[anchor_class_name]    
+                    unmatched_threshold=self.unmatched_thresholds[anchor_class_name],
+                    alpha= self.alpha[anchor_class_name],
+                    beta = self.beta[anchor_class_name],
+                    gamma= self.gamma[anchor_class_name]
                 )
                 target_list.append(single_target)
 
@@ -128,8 +137,16 @@ class AxisAlignedTargetAssigner(object):
 
         }
         return all_targets_dict
+    
+    def calculate_boxes_differ(self, boxes_a, boxes_b, alpha=0, beta=0, gamma=0):
+        dist_differ = torch.cdist(boxes_a[:, :3], boxes_b[:, :3])
+        size_differ = torch.abs(torch.cdist(boxes_a[:, 3:6], boxes_b[:, 3:6], p=1))
+        angle_differ = torch.sin(torch.abs(torch.cdist(boxes_a[:, 6].unsqueeze(-1), torch.fmod(boxes_b[:, 6].unsqueeze(-1)+torch.pi, torch.pi), p=1)))
+        return alpha*dist_differ + beta*size_differ + gamma*angle_differ
+        
 
-    def assign_targets_single(self, anchors, gt_boxes, gt_classes, matched_threshold=0.6, unmatched_threshold=0.45):
+    def assign_targets_single(self, anchors, gt_boxes, gt_classes, matched_threshold=0.6, unmatched_threshold=0.45, 
+                              alpha=1.0, beta=1.0, gamma=1.0):
 
         num_anchors = anchors.shape[0]
         num_gt = gt_boxes.shape[0]
@@ -141,7 +158,9 @@ class AxisAlignedTargetAssigner(object):
             #! 计算anchor和gt的iou， second只计算了bev的iou
             anchor_by_gt_overlap = iou3d_nms_utils.boxes_iou3d_gpu(anchors[:, 0:7], gt_boxes[:, 0:7]) \
                 if self.match_height else box_utils.boxes3d_nearest_bev_iou(anchors[:, 0:7], gt_boxes[:, 0:7])
-
+            differ = self.calculate_boxes_differ(anchors[:, 0:7], gt_boxes[:, 0:7], alpha=alpha, beta=beta, gamma=gamma)
+            anchor_by_gt_overlap -= differ
+            
             # NOTE: The speed of these two versions depends the environment and the number of anchors
             # anchor_to_gt_argmax = torch.from_numpy(anchor_by_gt_overlap.cpu().numpy().argmax(axis=1)).cuda()
             #! anchor_to_gt_argmax是每个anchor对应的最高的iou的gt的索引, anchor_to_gt_max是每个anchor对应的最高的iou

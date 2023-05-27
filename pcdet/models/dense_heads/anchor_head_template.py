@@ -101,6 +101,12 @@ class AnchorHeadTemplate(nn.Module):
     def get_cls_layer_loss(self):
         cls_preds = self.forward_ret_dict['cls_preds']
         box_cls_labels = self.forward_ret_dict['box_cls_labels']
+        
+        pos_cnt_dict = {}
+        for idx, class_name in enumerate(self.class_names, 1):
+            pos_cnt = (box_cls_labels==idx).sum()
+            pos_cnt_dict['pos' + class_name] = pos_cnt
+        
         batch_size = int(cls_preds.shape[0])
         cared = box_cls_labels >= 0  # [N, num_anchors]
         positives = box_cls_labels > 0
@@ -132,6 +138,7 @@ class AnchorHeadTemplate(nn.Module):
         tb_dict = {
             'rpn_loss_cls': cls_loss.item()
         }
+        tb_dict.update(pos_cnt_dict)
         return cls_loss, tb_dict
 
     @staticmethod
