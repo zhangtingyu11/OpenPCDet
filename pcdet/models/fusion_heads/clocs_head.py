@@ -1,6 +1,8 @@
 import numpy as np
 import torch.nn as nn
-from ...utils.box_utils import boxes_to_corners_3d
+from ...utils.box_utils import boxes_to_corners_3d, pairwise_iou
+from ...utils import box_utils, common_utils, calibration_kitti
+
 import torch
 
 class ClocsHead(nn.Module):
@@ -32,15 +34,22 @@ class ClocsHead(nn.Module):
     def forward(self, data_dict):
         preds = data_dict['batch_box_preds']
         batch_size, pred_num, box_size = preds.shape
-        preds = preds.reshape(batch_size*pred_num, box_size)
+        preds = preds.view(batch_size*pred_num, box_size)
         pred_corners = boxes_to_corners_3d(preds)
         
-        calib = data_dict['calib_matrix']
+        calib_V2C_T = data_dict['calib_matrix_V2C_T']
+        calib_R0_T = data_dict['calib_matrix_R0_T']
+        calib_P2_T = data_dict['calib_matrix_P2_T']
+        
         pred_corners_homo = torch.cat([pred_corners, torch.ones((*pred_corners.shape[:2], 1)).cuda()], dim=-1)
         pred_corners_homo = pred_corners_homo.view(batch_size, -1, 4)
+        lidar_to_rect_matrix = torch.einsum('bij, bjk->bik', calib_V2C_T, calib_R0_T)
+        pred_corners_rect = torch.einsum('bij, bjk->bik', pred_corners_homo, lidar_to_rect_matrix)
         
-        pred_corners_on_image = torch.einsum('bij,bjk->bik', pred_corners_homo, calib)
-        pred_corners_on_image = pred_corners_on_image[:, :, :2]/pred_corners_on_image[:, :, 2].unsqueeze(-1)
+        pred_corners_rect_homo = torch.cat([pred_corners_rect, torch.ones((*pred_corners_rect.shape[:2], 1)).cuda()], dim=-1)
+        
+        pred_corners_on_image = torch.einsum('bij,bjk->bik', pred_corners_rect_homo, calib_P2_T).view(-1, 3)
+        pred_corners_on_image = (pred_corners_on_image[:, :2].transpose(0,1)/pred_corners_on_image[:, 2].unsqueeze(0)).transpose(0,1)
         pred_corners_on_image = pred_corners_on_image.view(batch_size, -1, 8, 2)
         
         x_min, _ = torch.min(pred_corners_on_image[:, :, :, 0], dim=-1)
@@ -51,10 +60,42 @@ class ClocsHead(nn.Module):
         batch_image_shape = data_dict['image_shape']
         img_height = batch_image_shape[:, 0]
         img_width = batch_image_shape[:, 1]
-        x_min = torch.clamp(x_min,min = torch.zeros(batch_size, 1).cuda(),max = img_width.unsqueeze(-1))
-        y_min = torch.clamp(y_min,min = torch.zeros(batch_size, 1).cuda(),max = img_height.unsqueeze(-1))
-        x_max = torch.clamp(x_max,min = torch.zeros(batch_size, 1).cuda(),max = img_width.unsqueeze(-1))
-        y_max = torch.clamp(y_max,min = torch.zeros(batch_size, 1).cuda(),max = img_height.unsqueeze(-1))
+        x_min = torch.clamp(x_min,min = torch.zeros(batch_size, 1).cuda(),max = img_width.unsqueeze(-1)).unsqueeze(-1)
+        y_min = torch.clamp(y_min,min = torch.zeros(batch_size, 1).cuda(),max = img_height.unsqueeze(-1)).unsqueeze(-1)
+        x_max = torch.clamp(x_max,min = torch.zeros(batch_size, 1).cuda(),max = img_width.unsqueeze(-1)).unsqueeze(-1)
+        y_max = torch.clamp(y_max,min = torch.zeros(batch_size, 1).cuda(),max = img_height.unsqueeze(-1)).unsqueeze(-1)
+        
+        anchor_project_on_image = torch.cat([x_min, y_min, x_max, y_max], dim=-1)
+        
+        #TODO 先用gt 2D框试试看，CLOCs用的是预测框
+        gt_corners = boxes_to_corners_3d(data_dict['gt_boxes'][:, :, :7].reshape(-1, 7).cpu().numpy())
+        gt_corners = torch.from_numpy(gt_corners).cuda()
+        gt_corners_homo = torch.cat([gt_corners, torch.ones((*gt_corners.shape[:2], 1)).cuda()], dim=-1)
+        gt_corners_homo = gt_corners_homo.view(batch_size, -1, 4)
+        
+        gt_corners_on_image = torch.einsum('bij,bjk->bik', gt_corners_homo, calib)
+        gt_corners_on_image = gt_corners_on_image[:, :, :2]/gt_corners_on_image[:, :, 2].unsqueeze(-1)
+        gt_corners_on_image = gt_corners_on_image.view(batch_size, -1, 8, 2)
+        
+        x_min, _ = torch.min(gt_corners_on_image[:, :, :, 0], dim=-1)
+        x_max, _ = torch.max(gt_corners_on_image[:, :, :, 0], dim=-1)
+        y_min, _ = torch.min(gt_corners_on_image[:, :, :, 1], dim=-1)
+        y_max, _ = torch.max(gt_corners_on_image[:, :, :, 1], dim=-1)
+        
+        batch_image_shape = data_dict['image_shape']
+        img_height = batch_image_shape[:, 0]
+        img_width = batch_image_shape[:, 1]
+        x_min = torch.clamp(x_min,min = torch.zeros(batch_size, 1).cuda(),max = img_width.unsqueeze(-1)).unsqueeze(-1)
+        y_min = torch.clamp(y_min,min = torch.zeros(batch_size, 1).cuda(),max = img_height.unsqueeze(-1)).unsqueeze(-1)
+        x_max = torch.clamp(x_max,min = torch.zeros(batch_size, 1).cuda(),max = img_width.unsqueeze(-1)).unsqueeze(-1)
+        y_max = torch.clamp(y_max,min = torch.zeros(batch_size, 1).cuda(),max = img_height.unsqueeze(-1)).unsqueeze(-1)
+        
+        gt_project_on_image = torch.cat([x_min, y_min, x_max, y_max], dim=-1)
+        
+        ious = []
+        for bidx in range(batch_size):
+            ious.append(pairwise_iou(anchor_project_on_image[bidx], gt_project_on_image[bidx]))
+        
         
         
         
