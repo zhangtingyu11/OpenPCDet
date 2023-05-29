@@ -14,7 +14,8 @@
             "justMyCode": true,
             "env": {
                 "LD_LIBRARY_PATH":"$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
-                "CUDA_VISIBLE_DEVICES":"1"
+                "CUDA_VISIBLE_DEVICES":"1",
+                "CUDA_LAUNCH_BLOCKING":"1"
             },
             "args":[
                 "--cfg_file",

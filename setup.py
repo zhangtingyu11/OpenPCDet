@@ -83,6 +83,15 @@ if __name__ == '__main__':
                 ]
             ),
             make_cuda_ext(
+                name='clocs_cuda',
+                module='pcdet.ops.clocs',
+                sources=[
+                    'src/clocs_api.cpp',
+                    'src/clocs.cpp',
+                    'src/clocs_kernel.cu',
+                ]
+            ),
+            make_cuda_ext(
                 name='pointnet2_stack_cuda',
                 module='pcdet.ops.pointnet2.pointnet2_stack',
                 sources=[

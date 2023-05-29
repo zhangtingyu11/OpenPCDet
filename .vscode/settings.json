@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        ".ipynb": "python",
+        "vector": "cpp",
+        "cstdint": "cpp",
+        "cmath": "cpp",
+        "*.cu": "cuda-cpp",
+        "ratio": "cpp"
+    }
+}

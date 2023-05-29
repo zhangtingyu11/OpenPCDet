@@ -248,7 +248,16 @@ class DatasetTemplate(torch_data.Dataset):
                     for k in range(batch_size):
                         batch_gt_boxes3d[k, :val[k].__len__(), :] = val[k]
                     ret[key] = batch_gt_boxes3d
-
+                elif key in ['results_2d']:
+                    boxes2d = [np.concatenate([obj.box2d.reshape(1, 4) for obj in result_2d], axis=0) for result_2d in val]
+                    scores = [np.concatenate([np.array(obj.score).reshape(1, 1) for obj in result_2d], axis=0) for result_2d in val]
+                    val = [np.concatenate([score, box2d], axis = -1) for score, box2d in zip(boxes2d, scores)]
+                    
+                    max_gt = max([len(x) for x in val])
+                    batch_gt_boxes3d = np.zeros((batch_size, max_gt, val[0].shape[-1]), dtype=np.float32)
+                    for k in range(batch_size):
+                        batch_gt_boxes3d[k, :val[k].__len__(), :] = val[k]
+                    ret[key] = batch_gt_boxes3d
                 elif key in ['roi_boxes']:
                     max_gt = max([x.shape[1] for x in val])
                     batch_gt_boxes3d = np.zeros((batch_size, val[0].shape[0], max_gt, val[0].shape[-1]), dtype=np.float32)

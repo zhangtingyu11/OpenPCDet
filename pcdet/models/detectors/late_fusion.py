@@ -26,7 +26,7 @@ class ClocsNet(Detector3DTemplate):
     def get_training_loss(self):
         disp_dict = {}
 
-        loss_rpn, tb_dict = self.dense_head.get_loss()
+        loss_rpn, tb_dict = self.fusion_head.get_loss()
         tb_dict = {
             'loss_rpn': loss_rpn.item(),
             **tb_dict

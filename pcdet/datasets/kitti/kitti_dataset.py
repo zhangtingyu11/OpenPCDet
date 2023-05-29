@@ -65,6 +65,11 @@ class KittiDataset(DatasetTemplate):
         lidar_file = self.root_split_path / 'velodyne' / ('%s.bin' % idx)
         assert lidar_file.exists()
         return np.fromfile(str(lidar_file), dtype=np.float32).reshape(-1, 4)
+    
+    def get_results_2d(self, idx):
+        result_2d_file = self.root_split_path / 'd2_detection_data' / ('%s.txt' % idx)
+        assert result_2d_file.exists()
+        return object3d_kitti.get_objects_from_label(result_2d_file)
 
     def get_image(self, idx):
         """
@@ -416,6 +421,10 @@ class KittiDataset(DatasetTemplate):
                 fov_flag = self.get_fov_flag(pts_rect, img_shape, calib)
                 points = points[fov_flag]
             input_dict['points'] = points
+            
+        if "results_2d" in get_item_list:
+            results_2d = self.get_results_2d(sample_idx)
+            input_dict['results_2d'] = results_2d
 
         if "images" in get_item_list:
             input_dict['images'] = self.get_image(sample_idx)
