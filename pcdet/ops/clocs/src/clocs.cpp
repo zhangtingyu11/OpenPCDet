@@ -10,6 +10,7 @@ All Rights Reserved 2019-2020.
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include "clocs.h"
+#include <stdio.h>
 
 #define CHECK_CUDA(x) do { \
   if (!x.type().is_cuda()) { \
@@ -71,6 +72,59 @@ int clocs_compute_iou_gpu(at::Tensor boxes_anchor, at::Tensor boxes_2d,
     float * scores_2d_data = scores_2d.data<float>();
     float * dis_to_lidar_3d_data = dis_to_lidar_3d.data<float>();
     int * max_num_data = max_num.data<int>();
+    // int ind = 0;
+    // for (int k=0; k < num_2d;k++){
+    //   const float * query_boxes = boxes_2d_data + k*4;
+    //   float qbox_area = ((query_boxes[2] - query_boxes[0]) *
+    //                 (query_boxes[3] - query_boxes[1]));
+    //   for(int n = 0; n < num_anchor;n++){
+    //     const float * boxes = boxes_anchor_data + n*4;
+    //     float iw = (std::min(boxes[2], query_boxes[2]) -
+    //               std::max(boxes[0], query_boxes[0]));
+    //     if(iw > 0){
+    //       float ih = (std::min(boxes[3], query_boxes[3]) -
+    //           std::max(boxes[1], query_boxes[1]));
+    //       if(ih > 0){
+    //         float ua = (
+    //           (boxes[2] - boxes[0]) *
+    //           (boxes[3] - boxes[1]) + qbox_area - iw * ih);
+    //         float * overlaps = overlaps_data+(ind)*4;
+
+    //         overlaps[0] = iw * ih / ua;
+    //         overlaps[1] = scores_3d_data[n];
+    //         overlaps[2] = scores_2d_data[k];
+    //         overlaps[3] = dis_to_lidar_3d_data[n];
+    //         int * tensor_index = tensor_idx_data +(ind)*2;
+    //         tensor_index[0] = k;
+    //         tensor_index[1] = n;
+    //         ind = ind+1;
+    //       }
+    //       else if (k == num_2d-1){
+    //         float * overlaps = overlaps_data+(ind)*4;
+    //         overlaps[0] = -10;
+    //         overlaps[1] = scores_3d_data[n];
+    //         overlaps[2] = -10;
+    //         overlaps[3] = dis_to_lidar_3d_data[n];
+    //         int * tensor_index = tensor_idx_data +(ind)*2;
+    //         tensor_index[0] = k;
+    //         tensor_index[1] = n;
+    //         ind = ind+1;
+    //       }
+    //     }
+    //     else if(k==num_2d-1){
+    //       float * overlaps = overlaps_data+(ind)*4;
+    //       overlaps[0] = -10;
+    //       overlaps[1] = scores_3d_data[n];
+    //       overlaps[2] = -10;
+    //       overlaps[3] = dis_to_lidar_3d_data[n];
+    //       int * tensor_index = tensor_idx_data +(ind)*2;
+    //       tensor_index[0] = k;
+    //       tensor_index[1] = n;
+    //       ind = ind+1;
+    //     }
+    //   }
+    // }
+    // *max_num_data = ind;
 
     clocscomputeiouLauncher(num_anchor, num_2d, boxes_anchor_data, boxes_2d_data, 
                             scores_3d_data, scores_2d_data, dis_to_lidar_3d_data,
@@ -84,3 +138,4 @@ int clocs_compute_iou_gpu(at::Tensor boxes_anchor, at::Tensor boxes_2d,
 
 
 
+;

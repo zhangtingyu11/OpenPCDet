@@ -178,7 +178,7 @@ class Detector3DTemplate(nn.Module):
         fusion_head_module = fusion_heads.__all__[self.model_cfg.FUSION_HEAD.NAME](
             model_cfg=self.model_cfg.FUSION_HEAD,
             input_channels=self.model_cfg.FUSION_HEAD.INPUT_FEATURES,
-            num_class=self.num_class if not self.model_cfg.DENSE_HEAD.CLASS_AGNOSTIC else 1,
+            num_class=self.num_class if not self.model_cfg.FUSION_HEAD.CLASS_AGNOSTIC else 1,
             class_names=self.class_names,
             grid_size=model_info_dict['grid_size'],
             point_cloud_range=model_info_dict['point_cloud_range'],

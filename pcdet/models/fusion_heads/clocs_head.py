@@ -6,13 +6,11 @@ from ...ops.clocs.clocs_utils import compute_clocs_iou
 from mmdet.models.task_modules.assigners import BboxOverlaps2D
 from ..dense_heads.anchor_head_template import AnchorHeadTemplate
 import torch
-from numba import njit, jit
-
-@jit(parallel=True, forceobj=True)
+import numba
+@numba.jit(nopython=True,parallel=True)
 def build_stage2_training(boxes, query_boxes, criterion, scores_3d, scores_2d, dis_to_lidar_3d,overlaps,tensor_index):
     N = boxes.shape[0] #70400
     K = query_boxes.shape[0] #30
-    max_num = 900000
     ind=0
     ind_max = ind
     for k in range(K):
@@ -86,49 +84,51 @@ class ClocsHead(AnchorHeadTemplate):
         self.maxpool = nn.MaxPool2d([self.model_cfg.MAXPOOL_DIM,1],1)
 
         self.compute_ious = BboxOverlaps2D()
+        # self.init_weights()
 
     def init_weights(self):
         pi = 0.01
-        nn.init.constant_(self.fuse.bias, -np.log((1 - pi) / pi))
+        # nn.init.constant_(self.fuse.bias, -np.log((1 - pi) / pi))
         nn.init.normal_(self.fuse.weight, mean=0, std=0.001)
+        # pass
 
     def forward(self, data_dict):
-        preds = data_dict['batch_box_preds']
-        pred_scores = torch.sigmoid(data_dict['batch_cls_preds'])
-        dis_to_lidar = torch.norm(preds[:, :, :2],p=2,dim=2,keepdim=True)/82.0
-        batch_size, pred_num, box_size = preds.shape
-        preds = preds.view(batch_size*pred_num, box_size)
-        pred_corners = boxes_to_corners_3d(preds)
+        # preds = data_dict['batch_box_preds']
+        # pred_scores = torch.sigmoid(data_dict['batch_cls_preds'])
+        # dis_to_lidar = torch.norm(preds[:, :, :2],p=2,dim=2,keepdim=True)/82.0
+        # batch_size, pred_num, box_size = preds.shape
+        # preds = preds.view(batch_size*pred_num, box_size)
+        # pred_corners = boxes_to_corners_3d(preds)
         
-        calib_V2C_T = data_dict['calib_matrix_V2C_T']
-        calib_R0_T = data_dict['calib_matrix_R0_T']
-        calib_P2_T = data_dict['calib_matrix_P2_T']
+        # calib_V2C_T = data_dict['calib_matrix_V2C_T']
+        # calib_R0_T = data_dict['calib_matrix_R0_T']
+        # calib_P2_T = data_dict['calib_matrix_P2_T']
         
-        pred_corners_homo = torch.cat([pred_corners, torch.ones((*pred_corners.shape[:2], 1)).cuda()], dim=-1)
-        pred_corners_homo = pred_corners_homo.view(batch_size, -1, 4)
-        lidar_to_rect_matrix = torch.einsum('bij, bjk->bik', calib_V2C_T, calib_R0_T)
-        pred_corners_rect = torch.einsum('bij, bjk->bik', pred_corners_homo, lidar_to_rect_matrix)
+        # pred_corners_homo = torch.cat([pred_corners, torch.ones((*pred_corners.shape[:2], 1)).cuda()], dim=-1)
+        # pred_corners_homo = pred_corners_homo.view(batch_size, -1, 4)
+        # lidar_to_rect_matrix = torch.einsum('bij, bjk->bik', calib_V2C_T, calib_R0_T)
+        # pred_corners_rect = torch.einsum('bij, bjk->bik', pred_corners_homo, lidar_to_rect_matrix)
         
-        pred_corners_rect_homo = torch.cat([pred_corners_rect, torch.ones((*pred_corners_rect.shape[:2], 1)).cuda()], dim=-1)
+        # pred_corners_rect_homo = torch.cat([pred_corners_rect, torch.ones((*pred_corners_rect.shape[:2], 1)).cuda()], dim=-1)
         
-        pred_corners_on_image = torch.einsum('bij,bjk->bik', pred_corners_rect_homo, calib_P2_T).view(-1, 3)
-        pred_corners_on_image = (pred_corners_on_image[:, :2].transpose(0,1)/pred_corners_on_image[:, 2].unsqueeze(0)).transpose(0,1)
-        pred_corners_on_image = pred_corners_on_image.view(batch_size, -1, 8, 2)
+        # pred_corners_on_image = torch.einsum('bij,bjk->bik', pred_corners_rect_homo, calib_P2_T).view(-1, 3)
+        # pred_corners_on_image = (pred_corners_on_image[:, :2].transpose(0,1)/pred_corners_on_image[:, 2].unsqueeze(0)).transpose(0,1)
+        # pred_corners_on_image = pred_corners_on_image.view(batch_size, -1, 8, 2)
         
-        x_min, _ = torch.min(pred_corners_on_image[:, :, :, 0], dim=-1)
-        x_max, _ = torch.max(pred_corners_on_image[:, :, :, 0], dim=-1)
-        y_min, _ = torch.min(pred_corners_on_image[:, :, :, 1], dim=-1)
-        y_max, _ = torch.max(pred_corners_on_image[:, :, :, 1], dim=-1)
+        # x_min, _ = torch.min(pred_corners_on_image[:, :, :, 0], dim=-1)
+        # x_max, _ = torch.max(pred_corners_on_image[:, :, :, 0], dim=-1)
+        # y_min, _ = torch.min(pred_corners_on_image[:, :, :, 1], dim=-1)
+        # y_max, _ = torch.max(pred_corners_on_image[:, :, :, 1], dim=-1)
         
-        batch_image_shape = data_dict['image_shape']
-        img_height = batch_image_shape[:, 0]
-        img_width = batch_image_shape[:, 1]
-        x_min = torch.clamp(x_min,min = torch.zeros(batch_size, 1).cuda(),max = img_width.unsqueeze(-1)).unsqueeze(-1)
-        y_min = torch.clamp(y_min,min = torch.zeros(batch_size, 1).cuda(),max = img_height.unsqueeze(-1)).unsqueeze(-1)
-        x_max = torch.clamp(x_max,min = torch.zeros(batch_size, 1).cuda(),max = img_width.unsqueeze(-1)).unsqueeze(-1)
-        y_max = torch.clamp(y_max,min = torch.zeros(batch_size, 1).cuda(),max = img_height.unsqueeze(-1)).unsqueeze(-1)
+        # batch_image_shape = data_dict['image_shape']
+        # img_height = batch_image_shape[:, 0]
+        # img_width = batch_image_shape[:, 1]
+        # x_min = torch.clamp(x_min,min = torch.zeros(batch_size, 1).cuda(),max = img_width.unsqueeze(-1)).unsqueeze(-1)
+        # y_min = torch.clamp(y_min,min = torch.zeros(batch_size, 1).cuda(),max = img_height.unsqueeze(-1)).unsqueeze(-1)
+        # x_max = torch.clamp(x_max,min = torch.zeros(batch_size, 1).cuda(),max = img_width.unsqueeze(-1)).unsqueeze(-1)
+        # y_max = torch.clamp(y_max,min = torch.zeros(batch_size, 1).cuda(),max = img_height.unsqueeze(-1)).unsqueeze(-1)
         
-        anchor_project_on_image = torch.cat([x_min, y_min, x_max, y_max], dim=-1)
+        # anchor_project_on_image = torch.cat([x_min, y_min, x_max, y_max], dim=-1)
         
         #! 注释的是用gt 2D框代替预测框
         # gt_corners = boxes_to_corners_3d(data_dict['gt_boxes'][:, :, :7].reshape(-1, 7).cpu().numpy())
@@ -155,7 +155,10 @@ class ClocsHead(AnchorHeadTemplate):
         # y_max = torch.clamp(y_max,min = torch.zeros(batch_size, 1).cuda(),max = img_height.unsqueeze(-1)).unsqueeze(-1)
         
         # gt_project_on_image = torch.cat([x_min, y_min, x_max, y_max, torch.ones_like(x_min)], dim=-1)
-        preds_2d_project_on_image = data_dict['results_2d']
+        anchor_project_on_image = data_dict['results_3d'][:, :, :4].cpu().numpy()
+        dis_to_lidar = data_dict['dis_to_lidar'][0].cpu().numpy()
+        final_scores = data_dict['results_3d'][:, :, 4].contiguous().view(-1 , 1).cpu().numpy()
+        preds_2d_project_on_image = data_dict['results_2d'].cpu().numpy()
         cls_pred_list = []
         valid_flag = []
         # for bidx, (anchor_projected, gt_projected) in enumerate(zip(anchor_project_on_image, gt_project_on_image)):
@@ -183,27 +186,39 @@ class ClocsHead(AnchorHeadTemplate):
             while k >= 0 and cur_pred_2d[k].sum() == 0:
                 k -= 1
             box_2d_detector = cur_pred_2d[:k + 1]
-            overlaps1 = torch.zeros((900000,4),dtype=box_2d_preds.dtype, device = box_2d_preds.device)
-            tensor_index1 = torch.zeros((900000,2),dtype=torch.int, device = box_2d_preds.device)
+            overlaps1 = np.zeros((900000,4),dtype=box_2d_preds.dtype)
+            tensor_index1 = np.zeros((900000,2),dtype=box_2d_preds.dtype)
             overlaps1[:,:] = -1
             tensor_index1[:,:] = -1
+            box_2d_scores = np.expand_dims(box_2d_detector[:, 4], axis=-1)
+            iou_test,tensor_index, max_num = build_stage2_training(box_2d_preds,
+                                    box_2d_detector[:, :4],
+                                    -1,
+                                    final_scores,
+                                    box_2d_scores,
+                                    dis_to_lidar,
+                                    overlaps1,
+                                    tensor_index1)
+            # overlaps1 = torch.zeros((900000,4),dtype=box_2d_preds.dtype, device = box_2d_preds.device)
+            # tensor_index1 = torch.zeros((900000,2),dtype=torch.int, device = box_2d_preds.device)
+            # overlaps1[:,:] = -1
+            # tensor_index1[:,:] = -1
             #final_scores[final_scores<0.1] = 0
-            #box_2d_preds[(final_scores<0.1).reshape(-1),:] = 0 
-            max_num = torch.zeros(1, dtype=torch.int, device = box_2d_preds.device)
-            iou_test,tensor_index, max_num = compute_clocs_iou(box_2d_preds,
-                                                box_2d_detector[:, :4].contiguous(),
-                                                pred_scores[bidx],
-                                                box_2d_detector[:, -1].unsqueeze(-1).contiguous(),
-                                                dis_to_lidar[bidx],
-                                                overlaps1,
-                                                tensor_index1,
-                                                max_num)
-            iou_test_tensor = iou_test  #iou_test_tensor shape: [160000,4]
-            tensor_index_tensor = tensor_index
+            #box_2d_preds[(final_scores<0.1).reshape(-1),:] = 0 ssss
+            # max_num = torch.zeros(1, dtype=torch.int, device = box_2d_preds.device)
+            # iou_test,tensor_index, max_num = compute_clocs_iou(box_2d_preds.contiguous(),
+            #                                     box_2d_detector[:, :4].contiguous(),
+            #                                     pred_scores[bidx].contiguous(),
+            #                                     box_2d_detector[:, -1].unsqueeze(-1).contiguous(),
+            #                                     dis_to_lidar[bidx].contiguous(),
+            #                                     overlaps1,
+            #                                     tensor_index1,
+            #                                     max_num)
+            iou_test_tensor = torch.FloatTensor(iou_test)  #iou_test_tensor shape: [160000,4]
+            tensor_index_tensor = torch.LongTensor(tensor_index)
             iou_test_tensor = iou_test_tensor.permute(1,0)
             iou_test_tensor = iou_test_tensor.reshape(1,4,1,900000)
             tensor_index_tensor = tensor_index_tensor.reshape(-1,2)
-            max_num = max_num.item()
             if max_num == 0:
                 non_empty_iou_test_tensor = torch.zeros(1,4,1,2)
                 non_empty_iou_test_tensor[:,:,:,:] = -1
@@ -212,11 +227,15 @@ class ClocsHead(AnchorHeadTemplate):
             else:
                 non_empty_iou_test_tensor = iou_test_tensor[:,:,:,:max_num]
                 non_empty_tensor_index_tensor = tensor_index_tensor[:max_num,:]
+            non_empty_tensor_index_tensor = non_empty_tensor_index_tensor.cuda()
+            non_empty_iou_test_tensor = non_empty_iou_test_tensor.cuda()
             if non_empty_tensor_index_tensor[0,0] == -1:
                 out_1 = torch.zeros(1,200,70400,dtype = non_empty_iou_test_tensor.dtype,device = non_empty_iou_test_tensor.device)
                 out_1[:,:,:] = -9999999
                 valid_flag.append(0)
             else:
+                for parameter in self.fuse.parameters():
+                    print(parameter)
                 x = self.fuse(non_empty_iou_test_tensor)
                 out_1 = torch.zeros(1,200,70400,dtype = non_empty_iou_test_tensor.dtype,device = non_empty_iou_test_tensor.device)
                 out_1[:,:,:] = -9999999

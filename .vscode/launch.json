@@ -20,8 +20,9 @@
             "args":[
                 "--cfg_file",
                 "cfgs/kitti_models/second_car_clocs.yaml",
-                "--pretrained_model",
-                "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth"
+                "--fix_random_seed",
+                // "--pretrained_model",
+                // "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth"
             ]
         }
     ]
