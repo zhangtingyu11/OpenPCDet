@@ -84,6 +84,13 @@ class KittiDataset(DatasetTemplate):
         with open(dist_to_lidar_file, 'rb') as f:
             dist_to_lidar = pickle.load(f)
         return dist_to_lidar
+    
+    def get_lidar_detection_data(self, idx):
+        lidar_detection_data_file = self.root_split_path / 'lidar_detection_data' / ('%s.pkl' % idx)
+        assert lidar_detection_data_file.exists()
+        with open(lidar_detection_data_file, 'rb') as f:
+            lidar_detection_data = pickle.load(f)
+        return lidar_detection_data
 
     def get_image(self, idx):
         """
@@ -447,6 +454,10 @@ class KittiDataset(DatasetTemplate):
         if "dis_to_lidar" in get_item_list:
             dis_to_lidar = self.get_dist_to_lidar(sample_idx)
             input_dict['dis_to_lidar'] = dis_to_lidar
+            
+        if "lidar_detection_data" in get_item_list:
+            lidar_detection_data = self.get_lidar_detection_data(sample_idx)
+            input_dict['lidar_detection_data'] = lidar_detection_data
 
         if "images" in get_item_list:
             input_dict['images'] = self.get_image(sample_idx)

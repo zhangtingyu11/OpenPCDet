@@ -7,6 +7,23 @@ from mmdet.models.task_modules.assigners import BboxOverlaps2D
 from ..dense_heads.anchor_head_template import AnchorHeadTemplate
 import torch
 import numba
+import copy
+from ...utils.box_utils import boxes3d_lidar_to_kitti_camera
+
+def lidar_to_camera(points, r_rect, velo2cam):
+    num_points = points.shape[0]
+    points = torch.cat(
+        [points, torch.ones(num_points, 1).type_as(points)], dim=-1)
+    camera_points = points @ (r_rect @ velo2cam).t()
+    return camera_points[..., :3]
+
+def box_lidar_to_camera(data, r_rect, velo2cam):
+    xyz_lidar = data[..., 0:3]
+    w, l, h = data[..., 3:4], data[..., 4:5], data[..., 5:6]
+    r = data[..., 6:7]
+    xyz = lidar_to_camera(xyz_lidar, r_rect, velo2cam)
+    return torch.cat([xyz, l, h, w, r], dim=-1)
+
 @numba.jit(nopython=True,parallel=True)
 def build_stage2_training(boxes, query_boxes, criterion, scores_3d, scores_2d, dis_to_lidar_3d,overlaps,tensor_index):
     N = boxes.shape[0] #70400
@@ -234,8 +251,8 @@ class ClocsHead(AnchorHeadTemplate):
                 out_1[:,:,:] = -9999999
                 valid_flag.append(0)
             else:
-                for parameter in self.fuse.parameters():
-                    print(parameter)
+                # for parameter in self.fuse.parameters():
+                #     print(parameter)
                 x = self.fuse(non_empty_iou_test_tensor)
                 out_1 = torch.zeros(1,200,70400,dtype = non_empty_iou_test_tensor.dtype,device = non_empty_iou_test_tensor.device)
                 out_1[:,:,:] = -9999999
@@ -249,15 +266,47 @@ class ClocsHead(AnchorHeadTemplate):
         cls_preds = torch.cat(cls_pred_list, dim=0)
         
         
-        
-        
         self.forward_ret_dict['cls_preds'] = cls_preds
         self.forward_ret_dict['valid_flag'] = valid_flag
+        # lidar_detection_data = data_dict['lidar_detection_data']
+        # lidar_detection_data[:, :, -1] = -lidar_detection_data[:, :, -1]-torch.pi/2
+        # lidar_detection_data[:, :, -1][lidar_detection_data[:, :, -1] < -torch.pi] += torch.pi*2
+        # lidar_detection_data = lidar_detection_data[:, :, [0,1,2,4,3,5,6]]
+        gt_boxes = data_dict['gt_boxes']
+        gt_boxes_classes = data_dict['gt_boxes'][:, :, -1].unsqueeze(-1)
+        gt_boxes = np.expand_dims(boxes3d_lidar_to_kitti_camera(data_dict['gt_boxes'][0].detach().cpu().numpy(), data_dict['calib'][0]), axis=0)
+        gt_boxes = torch.from_numpy(gt_boxes).cuda()
+        if(gt_boxes.shape[1] > 0):
+            mask = gt_boxes[..., -1]<-torch.pi
+            gt_boxes[..., -1][mask]+=torch.pi*2
+        gt_boxes = torch.cat([gt_boxes, gt_boxes_classes], dim=-1)
+        lidar_detection_data = data_dict['lidar_detection_data']
+        lidar_detection_data[:, :, -1] = -lidar_detection_data[:, :, -1]-torch.pi/2
+        lidar_detection_data[:, :, -1][lidar_detection_data[:, :, -1] < -torch.pi] += torch.pi*2
+        lidar_detection_data = lidar_detection_data[:, :, [0,1,2,4,3,5,6]]
+        h = copy.deepcopy(lidar_detection_data[:, :, 5:6])
+        lidar_detection_data[:, :, 2:3] += h/2
+        openpcdet_lidar_detection_data = copy.deepcopy(lidar_detection_data)
+        lidar_detection_data = np.expand_dims(boxes3d_lidar_to_kitti_camera(lidar_detection_data[0].detach().cpu().numpy(), data_dict['calib'][0]), axis=0)
+        lidar_detection_data = torch.from_numpy(lidar_detection_data).cuda()
+        
+
         if self.training:
             targets_dict = self.assign_targets(
-                gt_boxes=data_dict['gt_boxes']
+                preds=lidar_detection_data,
+                gt_boxes=gt_boxes
             )
             self.forward_ret_dict.update(targets_dict)
+            
+        if not self.training or self.predict_boxes_when_training:
+            batch_cls_preds, batch_box_preds = self.generate_predicted_boxes(
+                batch_size=data_dict['batch_size'],
+                cls_preds=cls_preds, box_preds=openpcdet_lidar_detection_data, dir_cls_preds=None
+            )
+            data_dict['batch_cls_preds'] = batch_cls_preds
+            data_dict['batch_box_preds'] = batch_box_preds
+            data_dict['cls_preds_normalized'] = False
+
 
         return data_dict
     
@@ -294,6 +343,7 @@ class ClocsHead(AnchorHeadTemplate):
         one_hot_targets = torch.zeros(
             *list(cls_targets.shape), self.num_class + 1, dtype=cls_preds.dtype, device=cls_targets.device
         )
+        
         one_hot_targets.scatter_(-1, cls_targets.unsqueeze(dim=-1).long(), 1.0)
         cls_preds = cls_preds.view(batch_size, -1, self.num_class)
         one_hot_targets = one_hot_targets[..., 1:]
@@ -305,3 +355,33 @@ class ClocsHead(AnchorHeadTemplate):
             'rpn_loss_cls': cls_loss.item()
         }
         return cls_loss, tb_dict
+    
+    def assign_targets(self, preds, gt_boxes):
+        """
+        Args:
+            gt_boxes: (B, M, 8)
+        Returns:
+
+        """
+        targets_dict = self.target_assigner.assign_targets(
+            [preds.view((1, 200, 176, 1, 2, 7))], gt_boxes
+        )
+        return targets_dict
+    
+    def generate_predicted_boxes(self, batch_size, cls_preds, box_preds, dir_cls_preds=None):
+        """
+        Args:
+            batch_size:
+            cls_preds: (N, H, W, C1)
+            box_preds: (N, H, W, C2)
+            dir_cls_preds: (N, H, W, C3)
+
+        Returns:
+            batch_cls_preds: (B, num_boxes, num_classes)
+            batch_box_preds: (B, num_boxes, 7+C)
+
+        """
+
+
+
+        return cls_preds, box_preds
