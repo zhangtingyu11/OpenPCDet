@@ -89,6 +89,51 @@ def corners_rect_to_camera(corners):
 
     return camera_rect
 
+def lidar_boxes_to_image_kitti_torch_cuda(boxes, P2_T, R0_T, V2C_T, img_height, img_width):
+    """将kittilidar坐标系上的包围框投影到图像上
+
+    Args:
+        boxes (_type_): 点云坐标[batch_size, N, 7] 或者[batch_size, N, 8]
+        P2_T (_type_): kitti的P2矩阵的转置, [batch_size, 4, 3]
+        R0_T (_type_): kitti的R0矩阵的转置, [batch_size, 3, 3]
+        V2C_T (_type_): kitti的V2C矩阵的转置, [batch_size, 4, 3]
+        img_height (_type_): 图像的高度, [batch_size]
+        img_width (_type_): 图像的宽度, [batch_size]
+
+    Returns:
+        _type_: 在图像上的坐标[batch_size, N, 4], [左上角x, 左上角y, 右下角x, 右下角y]
+    """
+    batch_size, _, dim = boxes.shape
+    boxes = boxes.view(-1, dim)
+    points = boxes_to_corners_3d(boxes)
+    #* 转化为齐次坐标
+    points_homo = torch.cat([points, torch.ones((*points.shape[:2], 1)).cuda()], dim=-1)
+    points_homo = points_homo.view(batch_size, -1, 4)
+    #* 转化到rect
+    lidar_to_rect_matrix = torch.einsum('bij, bjk->bik', V2C_T, R0_T)
+    points_rect = torch.einsum('bij, bjk->bik', points_homo, lidar_to_rect_matrix)
+    
+    #* rect坐标转化到齐次坐标
+    points_rect_homo = torch.cat([points_rect, torch.ones((*points_rect.shape[:2], 1)).cuda()], dim=-1)
+    
+    #* 计算投影到图像上的二维坐标
+    points_on_image = torch.einsum('bij,bjk->bik', points_rect_homo, P2_T).view(-1, 3)
+    points_on_image = (points_on_image[:, :2].transpose(0,1)/points_on_image[:, 2].unsqueeze(0)).transpose(0,1)
+    points_on_image = points_on_image.view(batch_size, -1, 8, 2)
+    
+    x_min, _ = torch.min(points_on_image[:, :, :, 0], dim=-1)
+    x_max, _ = torch.max(points_on_image[:, :, :, 0], dim=-1)
+    y_min, _ = torch.min(points_on_image[:, :, :, 1], dim=-1)
+    y_max, _ = torch.max(points_on_image[:, :, :, 1], dim=-1)
+    
+    x_min = torch.clamp(x_min,min = torch.zeros(batch_size, 1).cuda(),max = img_width.unsqueeze(-1)).unsqueeze(-1)
+    y_min = torch.clamp(y_min,min = torch.zeros(batch_size, 1).cuda(),max = img_height.unsqueeze(-1)).unsqueeze(-1)
+    x_max = torch.clamp(x_max,min = torch.zeros(batch_size, 1).cuda(),max = img_width.unsqueeze(-1)).unsqueeze(-1)
+    y_max = torch.clamp(y_max,min = torch.zeros(batch_size, 1).cuda(),max = img_height.unsqueeze(-1)).unsqueeze(-1)
+    
+    points_project_on_image = torch.cat([x_min, y_min, x_max, y_max], dim=-1)
+    return points_project_on_image
+
 
 def mask_boxes_outside_range_numpy(boxes, limit_range, min_num_corners=1, use_center_to_filter=True):
     """

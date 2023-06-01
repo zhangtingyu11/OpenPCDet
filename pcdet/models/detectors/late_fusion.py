@@ -1,5 +1,7 @@
 from .detector3d_template import Detector3DTemplate
 from ..fusion_heads import clocs_head
+from ..backbones_2d import BaseBEVBackbone
+import torch
 
 class ClocsNet(Detector3DTemplate):
     def __init__(self, model_cfg, num_class, dataset):
@@ -9,9 +11,15 @@ class ClocsNet(Detector3DTemplate):
     def forward(self, batch_dict):
         for cur_module in self.module_list:
             if not isinstance(cur_module, clocs_head.ClocsHead):
-                cur_module.eval()
-            batch_dict = cur_module(batch_dict)
-
+                with torch.no_grad():
+                    batch_dict = cur_module(batch_dict)
+                # if isinstance(cur_module, BaseBEVBackbone):
+                #     for param in cur_module.parameters():
+                #         print(param)
+                #         break
+            else:
+                batch_dict = cur_module(batch_dict)
+                
         if self.training:
             loss, tb_dict, disp_dict = self.get_training_loss()
 

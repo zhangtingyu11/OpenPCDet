@@ -4,6 +4,7 @@ import torch
 from ....ops.iou3d_nms import iou3d_nms_utils
 from ....utils import box_utils
 from ....ops.iou3d_nms.nms_gpu import rotate_iou_gpu_eval
+from ....utils.box_utils import boxes3d_lidar_to_kitti_camera
 import numba
 
 @numba.jit(nopython=True, parallel=True)
@@ -317,116 +318,41 @@ class PredAxisAlignedTargetAssigner(AxisAlignedTargetAssigner):
             else:
                 target_dict = {
                     'box_cls_labels': [t['box_cls_labels'].view(*feature_map_size, -1) for t in target_list],
-                    # 'box_reg_targets': [t['box_reg_targets'].view(*feature_map_size, -1, self.box_coder.code_size)
-                    #                     for t in target_list],
-                    # 'reg_weights': [t['reg_weights'].view(*feature_map_size, -1) for t in target_list]
                 }
-                # target_dict['box_reg_targets'] = torch.cat(
-                #     target_dict['box_reg_targets'], dim=-2
-                # ).view(-1, self.box_coder.code_size)
 
                 target_dict['box_cls_labels'] = torch.cat(target_dict['box_cls_labels'], dim=-1).view(-1)
-                # target_dict['reg_weights'] = torch.cat(target_dict['reg_weights'], dim=-1).view(-1)
 
-            # bbox_targets.append(target_dict['box_reg_targets'])
             cls_labels.append(target_dict['box_cls_labels'])
-            # reg_weights.append(target_dict['reg_weights'])
 
-        # bbox_targets = torch.stack(bbox_targets, dim=0)
 
         cls_labels = torch.stack(cls_labels, dim=0)
-        # reg_weights = torch.stack(reg_weights, dim=0)
         all_targets_dict = {
             'box_cls_labels': cls_labels,
-            # 'box_reg_targets': bbox_targets,
-            # 'reg_weights': reg_weights
-
         }
         return all_targets_dict
 
     def assign_targets_single(self, anchors, gt_boxes, gt_classes, matched_threshold=0.6, unmatched_threshold=0.45):
 
         num_anchors = anchors.shape[0]
-        num_gt = gt_boxes.shape[0]
 
-        labels = np.zeros((num_anchors,), dtype=np.int32)
         # labels = torch.zeros((num_anchors,), dtype=torch.int32, device=anchors.device)
-        gt_ids = torch.ones((num_anchors,), dtype=torch.int32, device=anchors.device) * -1
-
+        labels = np.zeros((num_anchors,), dtype=np.int32)
         if len(gt_boxes) > 0 and anchors.shape[0] > 0:
-            anchor_by_gt_overlap = iou3d_nms_utils.boxes_bev_iou_cpu(gt_boxes[:, 0:7].cpu(), anchors[:, 0:7].cpu()) \
-                if self.match_height else d3_box_overlap(gt_boxes[:, 0:7].detach().cpu().numpy(), 
-                                                         anchors[:, 0:7].detach().cpu().numpy())
+            # anchor_by_gt_overlap = iou3d_nms_utils.boxes_iou3d_gpu(gt_boxes[:, 0:7].cpu(), anchors[:, 0:7].cpu()) \
+            #     if self.match_height else iou3d_nms_utils.boxes_bev_iou_cpu(gt_boxes[:, 0:7].cpu(), 
+            #                                                                 anchors[:, 0:7].cpu())
+            anchor_by_gt_overlap = iou3d_nms_utils.boxes_bev_iou_cpu(gt_boxes[:, 0:7].cpu().numpy(), anchors[:, 0:7].cpu().numpy()) \
+                if self.match_height else d3_box_overlap(gt_boxes[:, 0:7].cpu().numpy(), 
+                                                         anchors[:, 0:7].cpu().numpy())
+            # iou_bev_max = torch.amax(anchor_by_gt_overlap,dim=0)
             # iou_bev_max = torch.amax(anchor_by_gt_overlap,dim=0)
             iou_bev_max = np.amax(anchor_by_gt_overlap,axis=0)
+            
 
             labels = ((iou_bev_max >= 0.7)*1).reshape(1,-1,1)
 
-        #     # NOTE: The speed of these two versions depends the environment and the number of anchors
-        #     # anchor_to_gt_argmax = torch.from_numpy(anchor_by_gt_overlap.cpu().numpy().argmax(axis=1)).cuda()
-        #     anchor_to_gt_argmax = anchor_by_gt_overlap.argmax(dim=1)
-        #     anchor_to_gt_max = anchor_by_gt_overlap[torch.arange(num_anchors, device=anchors.device), anchor_to_gt_argmax]
-
-        #     # gt_to_anchor_argmax = torch.from_numpy(anchor_by_gt_overlap.cpu().numpy().argmax(axis=0)).cuda()
-        #     gt_to_anchor_argmax = anchor_by_gt_overlap.argmax(dim=0)
-        #     gt_to_anchor_max = anchor_by_gt_overlap[gt_to_anchor_argmax, torch.arange(num_gt, device=anchors.device)]
-        #     empty_gt_mask = gt_to_anchor_max == 0
-        #     gt_to_anchor_max[empty_gt_mask] = -1
-
-        #     anchors_with_max_overlap = (anchor_by_gt_overlap == gt_to_anchor_max).nonzero()[:, 0]
-        #     gt_inds_force = anchor_to_gt_argmax[anchors_with_max_overlap]
-        #     labels[anchors_with_max_overlap] = gt_classes[gt_inds_force]
-        #     gt_ids[anchors_with_max_overlap] = gt_inds_force.int()
-
-        #     pos_inds = anchor_to_gt_max >= matched_threshold
-        #     gt_inds_over_thresh = anchor_to_gt_argmax[pos_inds]
-        #     labels[pos_inds] = gt_classes[gt_inds_over_thresh]
-        #     gt_ids[pos_inds] = gt_inds_over_thresh.int()
-        #     bg_inds = (anchor_to_gt_max < unmatched_threshold).nonzero()[:, 0]
-        # else:
-        #     bg_inds = torch.arange(num_anchors, device=anchors.device)
-
-        # fg_inds = (labels > 0).nonzero()[:, 0]
-
-        # if self.pos_fraction is not None:
-        #     num_fg = int(self.pos_fraction * self.sample_size)
-        #     if len(fg_inds) > num_fg:
-        #         num_disabled = len(fg_inds) - num_fg
-        #         disable_inds = torch.randperm(len(fg_inds))[:num_disabled]
-        #         labels[disable_inds] = -1
-        #         fg_inds = (labels > 0).nonzero()[:, 0]
-
-        #     num_bg = self.sample_size - (labels > 0).sum()
-        #     if len(bg_inds) > num_bg:
-        #         enable_inds = bg_inds[torch.randint(0, len(bg_inds), size=(num_bg,))]
-        #         labels[enable_inds] = 0
-        #     # bg_inds = torch.nonzero(labels == 0)[:, 0]
-        # else:
-        #     if len(gt_boxes) == 0 or anchors.shape[0] == 0:
-        #         labels[:] = 0
-        #     else:
-        #         labels[bg_inds] = 0
-        #         labels[anchors_with_max_overlap] = gt_classes[gt_inds_force]
-
-        # bbox_targets = anchors.new_zeros((num_anchors, self.box_coder.code_size))
-        # if len(gt_boxes) > 0 and anchors.shape[0] > 0:
-        #     fg_gt_boxes = gt_boxes[anchor_to_gt_argmax[fg_inds], :]
-        #     fg_anchors = anchors[fg_inds, :]
-        #     bbox_targets[fg_inds, :] = self.box_coder.encode_torch(fg_gt_boxes, fg_anchors)
-
-        # reg_weights = anchors.new_zeros((num_anchors,))
-
-        # if self.norm_by_num_examples:
-        #     num_examples = (labels >= 0).sum()
-        #     num_examples = num_examples if num_examples > 1.0 else 1.0
-        #     reg_weights[labels > 0] = 1.0 / num_examples
-        # else:
-        #     reg_weights[labels > 0] = 1.0
-
         ret_dict = {
             'box_cls_labels': torch.from_numpy(labels).cuda(),
-            # 'box_reg_targets': bbox_targets,
-            # 'reg_weights': reg_weights,
         }
         return ret_dict
 
