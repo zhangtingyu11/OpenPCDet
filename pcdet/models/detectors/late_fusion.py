@@ -1,6 +1,6 @@
 from .detector3d_template import Detector3DTemplate
 from ..fusion_heads import clocs_head
-from ..backbones_2d import BaseBEVBackbone
+from ..dense_heads import AnchorHeadSingle
 import torch
 
 class ClocsNet(Detector3DTemplate):
@@ -11,14 +11,13 @@ class ClocsNet(Detector3DTemplate):
     def forward(self, batch_dict):
         for cur_module in self.module_list:
             if not isinstance(cur_module, clocs_head.ClocsHead):
-                with torch.no_grad():
-                    batch_dict = cur_module(batch_dict)
-                # if isinstance(cur_module, BaseBEVBackbone):
-                #     for param in cur_module.parameters():
-                #         print(param)
-                #         break
+                cur_module.eval()
+                for param in cur_module.parameters():
+                    param.requires_grad = False
             else:
-                batch_dict = cur_module(batch_dict)
+                for param in cur_module.parameters():
+                    param.requires_grad = True
+            batch_dict = cur_module(batch_dict)
                 
         if self.training:
             loss, tb_dict, disp_dict = self.get_training_loss()
@@ -34,11 +33,11 @@ class ClocsNet(Detector3DTemplate):
     def get_training_loss(self):
         disp_dict = {}
 
-        loss_rpn, tb_dict = self.fusion_head.get_loss()
+        loss_fusion, tb_dict = self.fusion_head.get_loss()
         tb_dict = {
-            'loss_rpn': loss_rpn.item(),
+            'loss_fusion': loss_fusion.item(),
             **tb_dict
         }
 
-        loss = loss_rpn
+        loss = loss_fusion
         return loss, tb_dict, disp_dict
