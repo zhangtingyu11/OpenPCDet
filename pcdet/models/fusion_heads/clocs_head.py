@@ -124,35 +124,6 @@ class ClocsHead(AnchorHeadTemplate):
         
         boxes2d_by_detector = data_dict['results_2d']
         
-        #! 注释的是用gt 2D框代替预测框
-        # gt_corners = boxes_to_corners_3d(data_dict['gt_boxes'][:, :, :7].reshape(-1, 7).cpu().numpy())
-        # gt_corners = torch.from_numpy(gt_corners).cuda()
-        # gt_corners_homo = torch.cat([gt_corners, torch.ones((*gt_corners.shape[:2], 1)).cuda()], dim=-1)
-        # gt_corners_homo = gt_corners_homo.view(batch_size, -1, 4)
-        
-        # gt_corners_rect = torch.einsum('bij,bjk->bik', gt_corners_homo, lidar_to_rect_matrix)
-        
-        # gt_corners_rect_homo = torch.cat([gt_corners_rect, torch.ones((*gt_corners_rect.shape[:2], 1)).cuda()], dim=-1)
-        
-        # gt_corners_on_image = torch.einsum('bij,bjk->bik', gt_corners_rect_homo, calib_P2_T).view(-1, 3)
-        # gt_corners_on_image = (gt_corners_on_image[:, :2].transpose(0,1)/gt_corners_on_image[:, 2].unsqueeze(0)).transpose(0,1)
-        # gt_corners_on_image = gt_corners_on_image.view(batch_size, -1, 8, 2)
-        
-        # x_min, _ = torch.min(gt_corners_on_image[:, :, :, 0], dim=-1)
-        # x_max, _ = torch.max(gt_corners_on_image[:, :, :, 0], dim=-1)
-        # y_min, _ = torch.min(gt_corners_on_image[:, :, :, 1], dim=-1)
-        # y_max, _ = torch.max(gt_corners_on_image[:, :, :, 1], dim=-1)
-        
-        # x_min = torch.clamp(x_min,min = torch.zeros(batch_size, 1).cuda(),max = img_width.unsqueeze(-1)).unsqueeze(-1)
-        # y_min = torch.clamp(y_min,min = torch.zeros(batch_size, 1).cuda(),max = img_height.unsqueeze(-1)).unsqueeze(-1)
-        # x_max = torch.clamp(x_max,min = torch.zeros(batch_size, 1).cuda(),max = img_width.unsqueeze(-1)).unsqueeze(-1)
-        # y_max = torch.clamp(y_max,min = torch.zeros(batch_size, 1).cuda(),max = img_height.unsqueeze(-1)).unsqueeze(-1)
-        
-        # gt_project_on_image = torch.cat([x_min, y_min, x_max, y_max, torch.ones_like(x_min)], dim=-1)
-        # anchor_project_on_image = data_dict['results_3d'][:, :, :4].cpu().numpy()
-        # dis_to_lidar = data_dict['dis_to_lidar'][0].cpu().numpy()
-        # final_scores = data_dict['results_3d'][:, :, 4].contiguous().view(-1 , 1).cpu().numpy()
-        # preds_2d_project_on_image = data_dict['results_2d'].cpu().numpy()
         cls_pred_list = []
         valid_flag = []
         for (anchor_projected, boxes2d_projected, pred_score_3d, dis_to_lidar_single) in zip(box_preds_on_image, 
@@ -197,7 +168,6 @@ class ClocsHead(AnchorHeadTemplate):
             output = self.maxpool(output)
             cls_preds = output.reshape(1, 70400, 1)
             cls_pred_list.append(cls_preds)
-
         
         batch_cls_preds = torch.cat(cls_pred_list, dim=0)
         self.forward_ret_dict['cls_preds'] =batch_cls_preds
@@ -221,7 +191,6 @@ class ClocsHead(AnchorHeadTemplate):
             data_dict['batch_cls_preds'] = batch_cls_preds
             data_dict['batch_box_preds'] = preds
             data_dict['cls_preds_normalized'] = False
-
 
         return data_dict
     

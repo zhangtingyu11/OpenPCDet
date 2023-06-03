@@ -1,6 +1,5 @@
 import copy
 import pickle
-import torch
 
 import numpy as np
 from skimage import io
