@@ -8,19 +8,6 @@ import torch
 import numba
 import copy
 
-# def lidar_to_camera(points, r_rect, velo2cam):
-#     num_points = points.shape[0]
-#     points = torch.cat(
-#         [points, torch.ones(num_points, 1).type_as(points)], dim=-1)
-#     camera_points = points @ (r_rect @ velo2cam).t()
-#     return camera_points[..., :3]
-
-# def box_lidar_to_camera(data, r_rect, velo2cam):
-#     xyz_lidar = data[..., 0:3]
-#     w, l, h = data[..., 3:4], data[..., 4:5], data[..., 5:6]
-#     r = data[..., 6:7]
-#     xyz = lidar_to_camera(xyz_lidar, r_rect, velo2cam)
-#     return torch.cat([xyz, l, h, w, r], dim=-1)
 
 @numba.jit(nopython=True,parallel=True)
 def compute_clocs_ious(boxes, query_boxes, criterion, scores_3d, scores_2d, dis_to_lidar_3d,overlaps,tensor_index):
@@ -101,9 +88,9 @@ class ClocsHead(AnchorHeadTemplate):
     def forward(self, data_dict):
         preds = data_dict['batch_box_preds']
         #* 转成0~1之间
-        pred_3d_scores = torch.sigmoid(data_dict['batch_cls_preds']).detach().cpu().numpy()
+        pred_3d_scores = torch.sigmoid(data_dict['batch_cls_preds'])
         #! 计算包围框中心点到lidar的距离, clocs是计算包围框底部中心点到lidar的距离
-        dis_to_lidar = torch.norm(preds[:, :, :2],p=2,dim=2,keepdim=True).detach().cpu().numpy()/82.0
+        dis_to_lidar = torch.norm(preds[:, :, :2],p=2,dim=2,keepdim=True)/82.0
         
         calib_V2C_T = data_dict['calib_matrix_V2C_T']
         calib_R0_T = data_dict['calib_matrix_R0_T']
@@ -118,9 +105,9 @@ class ClocsHead(AnchorHeadTemplate):
                                                                    calib_R0_T,
                                                                    calib_V2C_T, 
                                                                    img_height, 
-                                                                   img_width).detach().cpu().numpy()
+                                                                   img_width)
         
-        boxes2d_by_detector = data_dict['results_2d'].detach().cpu().numpy()
+        boxes2d_by_detector = data_dict['results_2d']
         cls_pred_list = []
         valid_flag = []
         for box_2d_preds, box_2d_detector, scores_3d, dist_to_lidar_single in zip(box_preds_on_image, 
@@ -134,37 +121,20 @@ class ClocsHead(AnchorHeadTemplate):
             box_2d_detector = cur_pred_2d[:k + 1]
             scores_2d = box_2d_detector[:, 4:5]
             box_2d_detector = box_2d_detector[:, :4]
-            overlap = np.zeros((900000,4),dtype=box_2d_preds.dtype)-1
-            tensor_index = np.zeros((900000,2),dtype=box_2d_preds.dtype)-1
-            ious, tensor_idxs, max_num = compute_clocs_ious(box_2d_preds,
-                                                                box_2d_detector,
-                                                                -1,
-                                                                scores_3d,
-                                                                scores_2d,
-                                                                dist_to_lidar_single,
-                                                                overlap,
-                                                                tensor_index)
+            boxes_3d_num = box_2d_preds.shape[0]
+            boxes_2d_num = box_2d_detector.shape[0]
+            overlap = torch.zeros((boxes_3d_num, boxes_2d_num, 4), dtype = box_2d_detector.dtype, device = box_2d_detector.device)-1
+            ious = compute_clocs_iou(box_2d_preds.contiguous(),
+                                                    box_2d_detector.contiguous(),
+                                                    scores_3d,
+                                                    scores_2d.contiguous(),
+                                                    dist_to_lidar_single,
+                                                    overlap)
 
-            ious_tensor = torch.FloatTensor(ious).permute(1,0).reshape(1,4,1,900000)
-            tensor_idxs_tensor = torch.LongTensor(tensor_idxs).reshape(-1,2)
-            if max_num == 0:
-                non_empty_ious_tensor = torch.zeros(1,4,1,2)-1
-                non_empty_tensor_idxs_tensor = torch.zeros(2,2)-1
-            else:
-                non_empty_ious_tensor = ious_tensor[:,:,:,:max_num]
-                non_empty_tensor_idxs_tensor = tensor_idxs_tensor[:max_num,:]
-            non_empty_tensor_idxs_tensor = non_empty_tensor_idxs_tensor.cuda()
-            non_empty_ious_tensor = non_empty_ious_tensor.cuda()
-            if non_empty_tensor_idxs_tensor[0,0] == -1:
-                output = torch.zeros(1,200,70400,dtype = non_empty_ious_tensor.dtype,device = non_empty_ious_tensor.device)-9999999
-                valid_flag.append(False)
-            else:
-                res = self.fuse(non_empty_ious_tensor)
-                output = torch.zeros(1,200,70400,dtype = non_empty_ious_tensor.dtype,device = non_empty_ious_tensor.device)-9999999
-                output[:,non_empty_tensor_idxs_tensor[:,0],non_empty_tensor_idxs_tensor[:,1]] = res[0,:,0,:]
-                valid_flag.append(True)
+            ious = ious.permute(2, 0, 1).view(1, 4, boxes_3d_num, boxes_2d_num)
+            res = self.fuse(ious)
                 
-            output = self.maxpool(output)
+            output = torch.amax(res, dim = -1)
             output = output.squeeze().reshape(1,-1,1)
             cls_pred_list.append(output)
         cls_preds = torch.cat(cls_pred_list, dim=0)

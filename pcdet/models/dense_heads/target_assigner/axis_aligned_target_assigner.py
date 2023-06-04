@@ -7,38 +7,38 @@ from ....ops.iou3d_nms.nms_gpu import rotate_iou_gpu_eval
 from ....utils.box_utils import boxes3d_lidar_to_kitti_camera
 import numba
 
-# @numba.jit(nopython=True, parallel=True)
-# def d3_box_overlap_kernel(boxes, qboxes, rinc, criterion=-1):
-#     # ONLY support overlap in CAMERA, not lider.
-#     N, K = boxes.shape[0], qboxes.shape[0]
-#     for i in range(N):
-#         for j in range(K):
-#             if rinc[i, j] > 0:
-#                 iw = (min(boxes[i, 1], qboxes[j, 1]) - max(
-#                     boxes[i, 1] - boxes[i, 4], qboxes[j, 1] - qboxes[j, 4]))
+@numba.jit(nopython=True, parallel=True)
+def d3_box_overlap_kernel(boxes, qboxes, rinc, criterion=-1):
+    # ONLY support overlap in CAMERA, not lider.
+    N, K = boxes.shape[0], qboxes.shape[0]
+    for i in range(N):
+        for j in range(K):
+            if rinc[i, j] > 0:
+                iw = (min(boxes[i, 1], qboxes[j, 1]) - max(
+                    boxes[i, 1] - boxes[i, 4], qboxes[j, 1] - qboxes[j, 4]))
 
-#                 if iw > 0:
-#                     area1 = boxes[i, 3] * boxes[i, 4] * boxes[i, 5]
-#                     area2 = qboxes[j, 3] * qboxes[j, 4] * qboxes[j, 5]
-#                     inc = iw * rinc[i, j]
-#                     if criterion == -1:
-#                         ua = (area1 + area2 - inc)
-#                     elif criterion == 0:
-#                         ua = area1
-#                     elif criterion == 1:
-#                         ua = area2
-#                     else:
-#                         ua = 1.0
-#                     rinc[i, j] = inc / ua
-#                 else:
-#                     rinc[i, j] = 0.0
+                if iw > 0:
+                    area1 = boxes[i, 3] * boxes[i, 4] * boxes[i, 5]
+                    area2 = qboxes[j, 3] * qboxes[j, 4] * qboxes[j, 5]
+                    inc = iw * rinc[i, j]
+                    if criterion == -1:
+                        ua = (area1 + area2 - inc)
+                    elif criterion == 0:
+                        ua = area1
+                    elif criterion == 1:
+                        ua = area2
+                    else:
+                        ua = 1.0
+                    rinc[i, j] = inc / ua
+                else:
+                    rinc[i, j] = 0.0
 
 
-# def d3_box_overlap(boxes, qboxes, criterion=-1):
-#     rinc = rotate_iou_gpu_eval(boxes[:, [0, 2, 3, 5, 6]],
-#                                qboxes[:, [0, 2, 3, 5, 6]], 2)
-#     d3_box_overlap_kernel(boxes, qboxes, rinc, criterion)
-#     return rinc
+def d3_box_overlap(boxes, qboxes, criterion=-1):
+    rinc = rotate_iou_gpu_eval(boxes[:, [0, 2, 3, 5, 6]],
+                               qboxes[:, [0, 2, 3, 5, 6]], 2)
+    d3_box_overlap_kernel(boxes, qboxes, rinc, criterion)
+    return rinc
 class AxisAlignedTargetAssigner(object):
     def __init__(self, model_cfg, class_names, box_coder, match_height=False):
         super().__init__()
@@ -257,10 +257,7 @@ class PredAxisAlignedTargetAssigner(AxisAlignedTargetAssigner):
         Returns:
 
         """
-
-        bbox_targets = []
         cls_labels = []
-        reg_weights = []
 
         batch_size = gt_boxes_with_classes.shape[0]
         gt_classes = gt_boxes_with_classes[:, :, -1]
@@ -271,29 +268,22 @@ class PredAxisAlignedTargetAssigner(AxisAlignedTargetAssigner):
             while cnt > 0 and cur_gt[cnt].sum() == 0:
                 cnt -= 1
             cur_gt = cur_gt[:cnt + 1]
-            cur_gt_classes = gt_classes[k][:cnt + 1].int()
+            cur_gt_classes = gt_classes[k][:cnt + 1].astype(int)
 
             target_list = []
             for anchor_class_name, anchors in zip(self.anchor_class_names, all_anchors):
                 if cur_gt_classes.shape[0] > 1:
-                    mask = torch.from_numpy(self.class_names[cur_gt_classes.cpu() - 1] == anchor_class_name)
+                    mask = np.array(self.class_names[cur_gt_classes - 1] == anchor_class_name)
                 else:
-                    mask = torch.tensor([self.class_names[c - 1] == anchor_class_name
-                                         for c in cur_gt_classes], dtype=torch.bool)
+                    mask = np.array([self.class_names[c - 1] == anchor_class_name
+                                         for c in cur_gt_classes], dtype=np.bool_)
 
                 if self.use_multihead:
                     anchors = anchors.permute(3, 4, 0, 1, 2, 5).contiguous().view(-1, anchors.shape[-1])
-                    # if self.seperate_multihead:
-                    #     selected_classes = cur_gt_classes[mask].clone()
-                    #     if len(selected_classes) > 0:
-                    #         new_cls_id = self.gt_remapping[anchor_class_name]
-                    #         selected_classes[:] = new_cls_id
-                    # else:
-                    #     selected_classes = cur_gt_classes[mask]
                     selected_classes = cur_gt_classes[mask]
                 else:
                     feature_map_size = anchors.shape[:3]
-                    anchors = anchors.view(-1, anchors.shape[-1])
+                    anchors = anchors.reshape(-1, anchors.shape[-1])
                     selected_classes = cur_gt_classes[mask]
 
                 single_target = self.assign_targets_single(
@@ -332,27 +322,16 @@ class PredAxisAlignedTargetAssigner(AxisAlignedTargetAssigner):
         return all_targets_dict
 
     def assign_targets_single(self, anchors, gt_boxes, gt_classes, matched_threshold=0.6, unmatched_threshold=0.45):
-
         num_anchors = anchors.shape[0]
 
-        labels = torch.zeros((num_anchors,), dtype=torch.int32, device=anchors.device)
-        # labels = np.zeros((num_anchors,), dtype=np.int32)
+        labels = np.zeros((num_anchors,), dtype=np.int32)
         if len(gt_boxes) > 0 and anchors.shape[0] > 0:
-            anchor_by_gt_overlap = iou3d_nms_utils.boxes_iou3d_gpu(gt_boxes[:, 0:7].cpu(), anchors[:, 0:7].cpu()) \
-                if self.match_height else iou3d_nms_utils.boxes_bev_iou_cpu(gt_boxes[:, 0:7].cpu(), 
-                                                                            anchors[:, 0:7].cpu())
-            # anchor_by_gt_overlap = iou3d_nms_utils.boxes_bev_iou_cpu(gt_boxes[:, 0:7].cpu().numpy(), anchors[:, 0:7].cpu().numpy()) \
-            #     if self.match_height else d3_box_overlap(gt_boxes[:, 0:7].cpu().numpy(), 
-            #                                              anchors[:, 0:7].cpu().numpy())
-            iou_bev_max = torch.amax(anchor_by_gt_overlap,dim=0)
-            # iou_bev_max = torch.amax(anchor_by_gt_overlap,dim=0)
-            # iou_bev_max = np.amax(anchor_by_gt_overlap,axis=0)
-            
-
+            anchor_by_gt_overlap = d3_box_overlap(gt_boxes[:, 0:7], anchors[:, 0:7])
+            iou_bev_max = np.amax(anchor_by_gt_overlap,axis=0)
             labels = ((iou_bev_max >= 0.7)*1).reshape(1,-1,1)
 
         ret_dict = {
-            'box_cls_labels': labels.cuda(),
+            'box_cls_labels': torch.from_numpy(labels).cuda(),
         }
         return ret_dict
 
