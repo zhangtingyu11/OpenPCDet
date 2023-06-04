@@ -15,11 +15,30 @@
             "env": {
                 "LD_LIBRARY_PATH":"$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
                 "CUDA_VISIBLE_DEVICES":"1",
-                "CUDA_LAUNCH_BLOCKING":"1"
             },
             "args":[
                 "--cfg_file",
                 "cfgs/kitti_models/second_car_clocs.yaml",
+                "--fix_random_seed",
+                "--pretrained_model",
+                "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth"
+            ]
+        },
+        {
+            "name": "Train clocs trans",
+            "type": "python",
+            "request": "launch",
+            "cwd":"${workspaceFolder}/tools",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "LD_LIBRARY_PATH":"$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
+                "CUDA_VISIBLE_DEVICES":"1",
+            },
+            "args":[
+                "--cfg_file",
+                "cfgs/kitti_models/second_car_clocs_trans.yaml",
                 "--fix_random_seed",
                 "--pretrained_model",
                 "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth"
