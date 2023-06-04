@@ -12,6 +12,5 @@ int clocs_compute_iou_gpu(at::Tensor boxes3d_projected,
                             at::Tensor scores_3d, 
                             at::Tensor scores_2d,  
                             at::Tensor dis_to_lidar_3d,
-                            at::Tensor overlap, 
-                            at::Tensor tensor_index);
+                            at::Tensor overlap);
 #endif

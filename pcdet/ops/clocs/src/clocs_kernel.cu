@@ -16,8 +16,7 @@ __global__ void clocs_compute_iou_kernel(const int num_3d,
                                         const float * scores_3d, 
                                         const float * scores_2d, 
                                         const float * dis_to_lidar_3d,
-                                        float * overlap, 
-                                        int * tensor_index){
+                                        float * overlap){
     const int boxes3d_idx = blockIdx.x * THREADS_PER_BLOCK + threadIdx.x;
     const int boxes2d_idx = blockIdx.y * THREADS_PER_BLOCK + threadIdx.y;
     if (boxes3d_idx >= num_3d || boxes2d_idx >= num_2d){
@@ -27,7 +26,6 @@ __global__ void clocs_compute_iou_kernel(const int num_3d,
     const float * box_3d = boxes_3d + boxes3d_idx * 4;
     const float * box_2d = boxes_2d + boxes2d_idx * 4;
     float * cur_overlap = overlap + (boxes3d_idx * num_2d + boxes2d_idx) * 4;
-    int * cur_tensor_index = tensor_index + (boxes3d_idx * num_2d + boxes2d_idx) * 2;
     
     float qbox_area = (*(box_2d+2) - *(box_2d+0)) *
                         (*(box_2d+3) - *(box_2d+1));
@@ -44,16 +42,12 @@ __global__ void clocs_compute_iou_kernel(const int num_3d,
             cur_overlap[1] = scores_3d[boxes3d_idx];
             cur_overlap[2] = scores_2d[boxes2d_idx];
             cur_overlap[3] = dis_to_lidar_3d[boxes3d_idx];
-            cur_tensor_index[0] = boxes2d_idx;
-            cur_tensor_index[1] = boxes3d_idx;
         }
         else if(boxes2d_idx == num_2d-1){
             cur_overlap[0] = -10;
             cur_overlap[1] = scores_3d[boxes3d_idx];
             cur_overlap[2] = -10;
             cur_overlap[3] = dis_to_lidar_3d[boxes3d_idx];
-            cur_tensor_index[0] = boxes2d_idx;
-            cur_tensor_index[1] = boxes3d_idx;
         }
     }
     else if(boxes2d_idx == num_2d-1){
@@ -61,8 +55,6 @@ __global__ void clocs_compute_iou_kernel(const int num_3d,
         cur_overlap[1] = scores_3d[boxes3d_idx];
         cur_overlap[2] = -10;
         cur_overlap[3] = dis_to_lidar_3d[boxes3d_idx];
-        cur_tensor_index[0] = boxes2d_idx;
-        cur_tensor_index[1] = boxes3d_idx;
     }
 }
 
@@ -73,8 +65,7 @@ void clocscomputeiouLauncher(const int num_3d,
                                 const float * scores_3d, 
                                 const float * scores_2d, 
                                 const float * dis_to_lidar_3d,
-                                float * overlap, 
-                                int * tensor_index){
+                                float * overlap){
     dim3 blocks(DIVUP(num_3d, THREADS_PER_BLOCK), DIVUP(num_2d, THREADS_PER_BLOCK));  // blockIdx.x(col), blockIdx.y(row)
     dim3 threads(THREADS_PER_BLOCK, THREADS_PER_BLOCK);
 
@@ -85,8 +76,7 @@ void clocscomputeiouLauncher(const int num_3d,
                                                     scores_3d, 
                                                     scores_2d, 
                                                     dis_to_lidar_3d, 
-                                                    overlap, 
-                                                    tensor_index);
+                                                    overlap);
 
 #ifdef DEBUG
     cudaDeviceSynchronize();  // for using printf in kernel function
