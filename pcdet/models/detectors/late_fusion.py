@@ -1,8 +1,9 @@
 from .detector3d_template import Detector3DTemplate
-from ..fusion_heads import clocs_head
+from ..fusion_heads import clocs_head, clocs_trans_head
 from ..dense_heads import AnchorHeadSingle
 import torch
 
+fusion_heads = [clocs_head.ClocsHead, clocs_trans_head.ClocsTransHead]
 class ClocsNet(Detector3DTemplate):
     def __init__(self, model_cfg, num_class, dataset):
         super().__init__(model_cfg=model_cfg, num_class=num_class, dataset=dataset)
@@ -10,7 +11,7 @@ class ClocsNet(Detector3DTemplate):
 
     def forward(self, batch_dict):
         for cur_module in self.module_list:
-            if not isinstance(cur_module, clocs_head.ClocsHead):
+            if all(not isinstance(cur_module, head_module) for head_module in fusion_heads):
                 cur_module.eval()
                 for param in cur_module.parameters():
                     param.requires_grad = False
