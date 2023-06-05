@@ -606,3 +606,14 @@ class GaussianFocalLoss(nn.Module):
         neg_loss = -(1 - pred + eps).log() * pred.pow(self.alpha) * neg_weights
 
         return pos_loss + neg_loss
+    
+class CosineContrastiveLoss(nn.Module):
+    def __init__(self, margin=0.4):
+        super(CosineContrastiveLoss, self).__init__()
+        self.margin = margin
+
+    def forward(self, output1, output2, label):
+        cos_sim = F.cosine_similarity(output1, output2, -1)
+        loss_cos_con = torch.mean((label) * torch.div(torch.pow((1.0-cos_sim), 2), 4) +
+                                    (1-label) * torch.pow(cos_sim * torch.lt(cos_sim, self.margin), 2))
+        return loss_cos_con
