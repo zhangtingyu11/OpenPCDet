@@ -65,31 +65,15 @@ class KittiDataset(DatasetTemplate):
         assert lidar_file.exists()
         return np.fromfile(str(lidar_file), dtype=np.float32).reshape(-1, 4)
     
-    def get_results_2d(self, idx):
-        result_2d_file = self.root_split_path / 'd2_detection_data' / ('%s.txt' % idx)
+    def get_results_2d(self, idx, detector_name):
+        result_2d_file = self.root_path / 'image_detector_data' / detector_name / ('%s.txt' % idx)
         assert result_2d_file.exists()
         return object3d_kitti.get_objects_from_label(result_2d_file)
     
-    def get_results_3d(self, idx):
-        result_3d_file = self.root_split_path / 'd3_detection_data' / ('%s.pkl' % idx)
+    def get_results_3d(self, idx, detector_name):
+        result_3d_file = self.root_path / 'lidar_detector_data' / detector_name / ('%s.txt' % idx)
         assert result_3d_file.exists()
-        with open(result_3d_file, 'rb') as f:
-            result_3d = pickle.load(f)
-        return result_3d
-
-    def get_dist_to_lidar(self, idx):
-        dist_to_lidar_file = self.root_split_path / 'dis_to_lidar' / ('%s.pkl' % idx)
-        assert dist_to_lidar_file.exists()
-        with open(dist_to_lidar_file, 'rb') as f:
-            dist_to_lidar = pickle.load(f)
-        return dist_to_lidar
-    
-    def get_lidar_detection_data(self, idx):
-        lidar_detection_data_file = self.root_split_path / 'lidar_detection_data' / ('%s.pkl' % idx)
-        assert lidar_detection_data_file.exists()
-        with open(lidar_detection_data_file, 'rb') as f:
-            lidar_detection_data = pickle.load(f)
-        return lidar_detection_data
+        return object3d_kitti.get_objects_from_label(result_3d_file)
 
     def get_image(self, idx):
         """
@@ -405,6 +389,8 @@ class KittiDataset(DatasetTemplate):
         img_shape = info['image']['image_shape']
         calib = self.get_calib(sample_idx)
         get_item_list = self.dataset_cfg.get('GET_ITEM_LIST', ['points'])
+        detector_2d_name = self.dataset_cfg.get('DETECTOR_2D_NAME', None)
+        detector_3d_name = self.dataset_cfg.get('DETECTOR_3D_NAME', None)
 
         input_dict = {
             'frame_id': sample_idx,
@@ -443,20 +429,12 @@ class KittiDataset(DatasetTemplate):
             input_dict['points'] = points
             
         if "results_2d" in get_item_list:
-            results_2d = self.get_results_2d(sample_idx)
+            results_2d = self.get_results_2d(sample_idx, detector_2d_name)
             input_dict['results_2d'] = results_2d
         
         if "results_3d" in get_item_list:
-            results_3d = self.get_results_3d(sample_idx)
+            results_3d = self.get_results_3d(sample_idx, detector_3d_name)
             input_dict['results_3d'] = results_3d
-        
-        if "dis_to_lidar" in get_item_list:
-            dis_to_lidar = self.get_dist_to_lidar(sample_idx)
-            input_dict['dis_to_lidar'] = dis_to_lidar
-            
-        if "lidar_detection_data" in get_item_list:
-            lidar_detection_data = self.get_lidar_detection_data(sample_idx)
-            input_dict['lidar_detection_data'] = lidar_detection_data
 
         if "images" in get_item_list:
             input_dict['images'] = self.get_image(sample_idx)
