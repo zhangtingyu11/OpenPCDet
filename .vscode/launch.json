@@ -25,7 +25,7 @@
             ]
         },
         {
-            "name": "Train clocs trans",
+            "name": "Train clocs contra",
             "type": "python",
             "request": "launch",
             "cwd":"${workspaceFolder}/tools",
@@ -38,10 +38,12 @@
             },
             "args":[
                 "--cfg_file",
-                "cfgs/kitti_models/second_car_clocs_trans.yaml",
+                "cfgs/kitti_models/second_car_clocs_contra.yaml",
                 "--fix_random_seed",
                 "--pretrained_model",
-                "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth"
+                "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth",
+                "--extra_tag",
+                "decrease_channel"
             ]
         }
     ]
