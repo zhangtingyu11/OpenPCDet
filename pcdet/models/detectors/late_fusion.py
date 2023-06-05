@@ -1,9 +1,9 @@
 from .detector3d_template import Detector3DTemplate
-from ..fusion_heads import clocs_head, clocs_trans_head
+from ..fusion_heads import clocs_contra_head, clocs_head
 from ..dense_heads import AnchorHeadSingle
 import torch
 
-fusion_heads = [clocs_head.ClocsHead, clocs_trans_head.ClocsTransHead]
+fusion_heads = [clocs_head.ClocsHead, clocs_contra_head.ClocsContraHead]
 class ClocsNet(Detector3DTemplate):
     def __init__(self, model_cfg, num_class, dataset):
         super().__init__(model_cfg=model_cfg, num_class=num_class, dataset=dataset)
