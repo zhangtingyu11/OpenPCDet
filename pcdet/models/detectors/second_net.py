@@ -21,7 +21,7 @@ class SECONDNet(Detector3DTemplate):
         else:
             if(self.model_cfg.get('SAVE_PKL', False)):
                 for frame_id, pred, score in zip(batch_dict['frame_id'], batch_dict['batch_box_preds'], batch_dict['batch_cls_preds']):
-                    if(self.model_cfg.POST_PROCESSING.get('OUTPUT_RAW_SCORE', False)):
+                    if(batch_dict['cls_preds_normalized']):
                         result_3d = torch.cat([pred, score], dim=-1)
                     else:
                         result_3d = torch.cat([pred, torch.sigmoid(score)], dim=-1)
