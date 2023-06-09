@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Train clocs",
+            "name": "Train second clocs",
             "type": "python",
             "request": "launch",
             "cwd":"${workspaceFolder}/tools",
@@ -19,9 +19,8 @@
             "args":[
                 "--cfg_file",
                 "cfgs/kitti_models/second_car_clocs.yaml",
-                "--fix_random_seed",
                 "--pretrained_model",
-                "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth"
+                "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth",
             ]
         },
         {
@@ -39,12 +38,51 @@
             "args":[
                 "--cfg_file",
                 "cfgs/kitti_models/second_car_clocs_contra.yaml",
-                "--fix_random_seed",
                 "--pretrained_model",
                 "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth",
-                "--extra_tag",
-                "decrease_channel"
+                // "--extra_tag",
+                // "decrease_channel"
             ]
-        }
+        },
+        {
+            "name": "Train pillar clocs",
+            "type": "python",
+            "request": "launch",
+            "cwd":"${workspaceFolder}/tools",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "LD_LIBRARY_PATH":"$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
+                "CUDA_VISIBLE_DEVICES":"1",
+            },
+            "args":[
+                "--cfg_file",
+                "cfgs/kitti_models/pointpillar_car_clocs.yaml",
+                "--pretrained_model",
+                "../output/kitti_models/pointpillar_car/origin/ckpt/checkpoint_epoch_80.pth",
+            ]
+        },
+        {
+            "name": "Test second",
+            "type": "python",
+            "request": "launch",
+            "cwd":"${workspaceFolder}/tools",
+            "program": "test.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "LD_LIBRARY_PATH":"$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
+                "CUDA_VISIBLE_DEVICES":"1",
+            },
+            "args":[
+                "--cfg_file",
+                "../output/kitti_models/second_car/origin/second_car.yaml",
+                "--batch_size",
+                "16",
+                "--ckpt",
+                "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth"               
+            ]
+        },
     ]
 }
