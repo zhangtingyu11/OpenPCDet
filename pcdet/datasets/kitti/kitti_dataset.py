@@ -71,9 +71,11 @@ class KittiDataset(DatasetTemplate):
         return object3d_kitti.get_objects_from_label(result_2d_file)
     
     def get_results_3d(self, idx, detector_name):
-        result_3d_file = self.root_path / 'lidar_detector_data' / detector_name / ('%s.txt' % idx)
+        result_3d_file = self.root_path / 'lidar_detector_data' / detector_name / ('%s.pkl' % idx)
         assert result_3d_file.exists()
-        return object3d_kitti.get_objects_from_label(result_3d_file)
+        with open(result_3d_file, 'rb') as f:
+            results_3d = pickle.load(f)
+        return results_3d
 
     def get_image(self, idx):
         """
