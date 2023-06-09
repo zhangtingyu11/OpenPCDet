@@ -1,7 +1,9 @@
-from .clocs_head import ClocsHead
-from .clocs_contra_head import ClocsContraHead
+from .clocs_sparse_head import ClocsSparseHead
+from .clocs_dense_head import ClocsDenseHead
+from .clocs_sparse_contra_head import ClocsSparseContraHead
 
 __all__ = {
-    'ClocsHead': ClocsHead,
-    'ClocsContraHead' : ClocsContraHead
+    'ClocsSparseHead': ClocsSparseHead,
+    'ClocsSparseContraHead' : ClocsSparseContraHead,
+    'ClocsDenseHead': ClocsDenseHead
 }
