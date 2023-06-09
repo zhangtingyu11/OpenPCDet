@@ -1,20 +1,18 @@
 import numpy as np
 import torch.nn as nn
 from ...utils.box_utils import boxes3d_lidar_to_kitti_camera, lidar_boxes_to_image_kitti_torch_cuda
-from ...utils import box_utils, common_utils, calibration_kitti
-from ...ops.clocs.clocs_utils import compute_clocs_iou
 from ..dense_heads.anchor_head_template import AnchorHeadTemplate
+from ...utils import box_utils
 import torch
-import numba
 import copy
+import numba
 
 
 @numba.jit(nopython=True,parallel=True)
-def compute_clocs_ious(boxes, query_boxes, criterion, scores_3d, scores_2d, dis_to_lidar_3d,overlaps,tensor_index):
+def compute_clocs_iou_dense(boxes, query_boxes, scores_3d, scores_2d, dis_to_lidar_3d,overlaps,tensor_index, max_num):
     N = boxes.shape[0] #70400
     K = query_boxes.shape[0] #30
     ind=0
-    ind_max = ind
     for k in range(K):
         qbox_area = ((query_boxes[k, 2] - query_boxes[k, 0]) *
                      (query_boxes[k, 3] - query_boxes[k, 1]))
@@ -25,17 +23,9 @@ def compute_clocs_ious(boxes, query_boxes, criterion, scores_3d, scores_2d, dis_
                 ih = (min(boxes[n, 3], query_boxes[k, 3]) -
                       max(boxes[n, 1], query_boxes[k, 1]))
                 if ih > 0:
-                    if criterion == -1:
-                        ua = (
-                            (boxes[n, 2] - boxes[n, 0]) *
-                            (boxes[n, 3] - boxes[n, 1]) + qbox_area - iw * ih)
-                    elif criterion == 0:
-                        ua = ((boxes[n, 2] - boxes[n, 0]) *
-                              (boxes[n, 3] - boxes[n, 1]))
-                    elif criterion == 1:
-                        ua = qbox_area
-                    else:
-                        ua = 1.0
+                    ua = (
+                        (boxes[n, 2] - boxes[n, 0]) *
+                        (boxes[n, 3] - boxes[n, 1]) + qbox_area - iw * ih)
                     overlaps[ind,0] = iw * ih / ua
                     overlaps[ind,1] = scores_3d[n,0]
                     overlaps[ind,2] = scores_2d[k,0]
@@ -43,6 +33,9 @@ def compute_clocs_ious(boxes, query_boxes, criterion, scores_3d, scores_2d, dis_
                     tensor_index[ind,0] = k
                     tensor_index[ind,1] = n
                     ind = ind+1
+                    if(ind >= max_num):
+                        return overlaps, tensor_index, ind
+                        
 
                 elif k==K-1:
                     overlaps[ind,0] = -10
@@ -52,6 +45,8 @@ def compute_clocs_ious(boxes, query_boxes, criterion, scores_3d, scores_2d, dis_
                     tensor_index[ind,0] = k
                     tensor_index[ind,1] = n
                     ind = ind+1
+                    if(ind >= max_num):
+                        return overlaps, tensor_index, ind
             elif k==K-1:
                 overlaps[ind,0] = -10
                 overlaps[ind,1] = scores_3d[n,0]
@@ -60,10 +55,11 @@ def compute_clocs_ious(boxes, query_boxes, criterion, scores_3d, scores_2d, dis_
                 tensor_index[ind,0] = k
                 tensor_index[ind,1] = n
                 ind = ind+1
-    if ind > ind_max:
-        ind_max = ind
+                if(ind >= max_num):
+                    return overlaps, tensor_index, ind
     return overlaps, tensor_index, ind
-class ClocsHead(AnchorHeadTemplate):
+
+class ClocsDenseHead(AnchorHeadTemplate):
     def __init__(self, model_cfg, input_channels, num_class, class_names, grid_size, point_cloud_range,
                  predict_boxes_when_training=True, **kwargs):
         super().__init__(
@@ -82,13 +78,16 @@ class ClocsHead(AnchorHeadTemplate):
             self.fuse.append(nn.ReLU())
         self.fuse.append(nn.Conv2d(num_filters[-2], num_filters[-1], 1))
         self.fuse = nn.Sequential(*self.fuse)
-        self.maxpool_dim = self.model_cfg.MAXPOOL_DIM
-        self.maxpool = nn.MaxPool2d([self.model_cfg.MAXPOOL_DIM,1],1)
 
     def forward(self, data_dict):
-        preds = data_dict['batch_box_preds']
+        preds = data_dict['results_3d'][:, :, :7]
+        pred_3d_scores = data_dict['results_3d'][:, :, 7:8]
         #* 转成0~1之间
-        pred_3d_scores = torch.sigmoid(data_dict['batch_cls_preds'])
+        # pred_3d_scores = torch.sigmoid(data_dict['batch_cls_preds'])
+        # allocated_memory = torch.cuda.memory_allocated()
+        # print("已分配的内存量1:", allocated_memory)  # 输出已分配的内存量
+        # preds, pred_3d_scores= data_dict['results_3d'][:, :, :7], data_dict['results_3d'][:, :, 7:8]
+        #* 转成0~1之间
         #! 计算包围框中心点到lidar的距离, clocs是计算包围框底部中心点到lidar的距离
         dis_to_lidar = torch.norm(preds[:, :, :2],p=2,dim=2,keepdim=True)/82.0
         
@@ -106,46 +105,60 @@ class ClocsHead(AnchorHeadTemplate):
                                                                    calib_V2C_T, 
                                                                    img_height, 
                                                                    img_width)
-        
+        # allocated_memory = torch.cuda.memory_allocated()
+        # print("已分配的内存量2:", allocated_memory)  #
         boxes2d_by_detector = data_dict['results_2d']
+        box_preds_on_image = box_preds_on_image.detach().cpu().numpy()
+        boxes2d_by_detector = boxes2d_by_detector.detach().cpu().numpy()
+        pred_3d_scores = pred_3d_scores.detach().cpu().numpy()
+        dis_to_lidar = dis_to_lidar.detach().cpu().numpy()
+        # allocated_memory = torch.cuda.memory_allocated()
+        # print("已分配的内存量3:", allocated_memory)  #
         cls_pred_list = []
-        valid_flag = []
         for box_2d_preds, box_2d_detector, scores_3d, dist_to_lidar_single in zip(box_preds_on_image, 
                                                                                     boxes2d_by_detector,
                                                                                     pred_3d_scores,
                                                                                     dis_to_lidar):
-            cur_pred_2d = box_2d_detector
-            k = cur_pred_2d.__len__() - 1
-            while k >= 0 and cur_pred_2d[k].sum() == 0:
-                k -= 1
-            box_2d_detector = cur_pred_2d[:k + 1]
+            #* transform_tensor_to_numpy
             scores_2d = box_2d_detector[:, 4:5]
             box_2d_detector = box_2d_detector[:, :4]
             boxes_3d_num = box_2d_preds.shape[0]
             boxes_2d_num = box_2d_detector.shape[0]
-            overlap = torch.zeros((boxes_3d_num, boxes_2d_num, 4), dtype = box_2d_detector.dtype, device = box_2d_detector.device)-1
-            ious = compute_clocs_iou(box_2d_preds.contiguous(),
-                                                    box_2d_detector.contiguous(),
-                                                    scores_3d,
-                                                    scores_2d.contiguous(),
-                                                    dist_to_lidar_single,
-                                                    overlap)
-
-            ious = ious.permute(2, 0, 1).view(1, 4, boxes_3d_num, boxes_2d_num)
-            res = self.fuse(ious)
+            overlap_max_num = self.model_cfg.OVERLAP_MAX_NUM
+            overlap = np.zeros((self.model_cfg.OVERLAP_MAX_NUM, 4), dtype=box_2d_detector.dtype)-1
+            tensor_idx = np.zeros((overlap_max_num, 2), dtype = np.int_)-1
+            overlap, tensor_idx, max_num = compute_clocs_iou_dense(box_2d_preds,
+                                                                box_2d_detector,
+                                                                scores_3d,
+                                                                scores_2d,
+                                                                dist_to_lidar_single,
+                                                                overlap,
+                                                                tensor_idx,
+                                                                overlap_max_num)
+            # allocated_memory = torch.cuda.memory_allocated()
+            # print("已分配的内存量4:", allocated_memory) 
+            overlap_max_num = min(overlap_max_num, max_num)
+            overlap_tensor = torch.FloatTensor(overlap)  #iou_test_tensor shape: [160000,4]
+            tensor_index_tensor = torch.LongTensor(tensor_idx)
+            non_empty_overlap_tensor = overlap_tensor[:overlap_max_num, :]
+            non_empty_tensor_index_tensor = tensor_index_tensor[:overlap_max_num,:]
+            non_empty_tensor_index_tensor = non_empty_tensor_index_tensor.cuda()
+            non_empty_overlap_tensor= non_empty_overlap_tensor.cuda()
+            non_empty_overlap_tensor = non_empty_overlap_tensor.permute(1, 0)
+            inpt = torch.zeros((1, 4, boxes_2d_num, boxes_3d_num), dtype=non_empty_overlap_tensor.dtype, device = non_empty_overlap_tensor.device)-1
+            inpt[0, :, non_empty_tensor_index_tensor[:, 0], non_empty_tensor_index_tensor[:, 1]] = non_empty_overlap_tensor
+            res = self.fuse(inpt)
                 
-            output = torch.amax(res, dim = -1)
+            output = torch.amax(res, dim = 2)
             output = output.squeeze().reshape(1,-1,1)
             cls_pred_list.append(output)
         cls_preds = torch.cat(cls_pred_list, dim=0)
         
         self.forward_ret_dict['cls_preds'] = cls_preds
-        self.forward_ret_dict['valid_flag'] = valid_flag
         gt_boxes = data_dict['gt_boxes'].detach().cpu().numpy()
         gt_boxes_classes = np.expand_dims(gt_boxes[:, :, -1], axis=-1)
         gt_boxes_in_camera = np.expand_dims(boxes3d_lidar_to_kitti_camera(gt_boxes[0], data_dict['calib'][0]), axis=0)
         gt_boxes_in_camera = np.concatenate([gt_boxes_in_camera, gt_boxes_classes], axis=-1)
-        preds_in_lidar = copy.deepcopy(preds)
         #* 在相机坐标系下的预测框
         preds_in_camera = np.expand_dims(boxes3d_lidar_to_kitti_camera(preds[0].detach().cpu().numpy(), data_dict['calib'][0]), axis=0)
 
@@ -158,7 +171,7 @@ class ClocsHead(AnchorHeadTemplate):
             
         if not self.training or self.predict_boxes_when_training:
             data_dict['batch_cls_preds'] = cls_preds
-            data_dict['batch_box_preds'] = preds_in_lidar
+            data_dict['batch_box_preds'] = preds
             data_dict['cls_preds_normalized'] = False
 
         return data_dict
@@ -173,9 +186,6 @@ class ClocsHead(AnchorHeadTemplate):
         cls_preds = self.forward_ret_dict['cls_preds']
         box_cls_labels = self.forward_ret_dict['box_cls_labels']
         batch_size = int(cls_preds.shape[0])
-        for idx, valid in enumerate(self.forward_ret_dict['valid_flag']):
-            if(valid == 0):
-                box_cls_labels[idx]=-1
         cared = box_cls_labels >= 0  # [N, num_anchors]
         positives = box_cls_labels > 0
         negatives = box_cls_labels == 0
@@ -217,6 +227,6 @@ class ClocsHead(AnchorHeadTemplate):
 
         """
         targets_dict = self.target_assigner.assign_targets(
-            [preds.reshape((1, 200, 176, 1, 2, 7))], gt_boxes
+            [preds.reshape(*self.anchors[0].shape)], gt_boxes
         )
         return targets_dict

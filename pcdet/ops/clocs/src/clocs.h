@@ -7,10 +7,20 @@
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 
-int clocs_compute_iou_gpu(at::Tensor boxes3d_projected, 
-                            at::Tensor boxes_2d, 
-                            at::Tensor scores_3d, 
-                            at::Tensor scores_2d,  
-                            at::Tensor dis_to_lidar_3d,
-                            at::Tensor overlap);
+int clocs_compute_iou_gpu_sparse(at::Tensor boxes3d_projected, 
+                                at::Tensor boxes_2d, 
+                                at::Tensor scores_3d, 
+                                at::Tensor scores_2d,  
+                                at::Tensor dis_to_lidar_3d,
+                                at::Tensor overlap);
+
+int clocs_compute_iou_gpu_dense(at::Tensor boxes3d_projected, 
+                                at::Tensor boxes_2d, 
+                                at::Tensor scores_3d, 
+                                at::Tensor scores_2d,
+                                at::Tensor dis_to_lidar_3d,
+                                at::Tensor max_num,
+                                at::Tensor overlap,
+                                at::Tensor tensor_idx,
+                                at::Tensor count);
 #endif

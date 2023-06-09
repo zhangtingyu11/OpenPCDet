@@ -38,21 +38,33 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
    }
 }
 
-void clocscomputeiouLauncher(const int num_3d, 
-                              const int num_2d, 
-                              const float * boxes3d, 
-                              const float* boxes_2d, 
-                              const float * scores_3d, 
-                              const float * scores_2d, 
-                              const float* dis_to_lidar_3d,
-                              float * overlap);
+void clocscomputeiousparseLauncher(const int num_3d, 
+                                  const int num_2d, 
+                                  const float * boxes3d, 
+                                  const float* boxes_2d, 
+                                  const float * scores_3d, 
+                                  const float * scores_2d, 
+                                  const float* dis_to_lidar_3d,
+                                  float * overlap);
 
-int clocs_compute_iou_gpu(at::Tensor boxes3d_projected, 
-                            at::Tensor boxes_2d, 
-                            at::Tensor scores_3d, 
-                            at::Tensor scores_2d, 
-                            at::Tensor dis_to_lidar_3d,
-                            at::Tensor overlap){
+void clocscomputeioudenseLauncher(const int num_3d, 
+                                  const int num_2d, 
+                                  const int * max_num,
+                                  const float * boxes3d, 
+                                  const float* boxes_2d, 
+                                  const float * scores_3d, 
+                                  const float * scores_2d, 
+                                  const float* dis_to_lidar_3d,
+                                  float * overlap,
+                                  int * tensor_idx, 
+                                  int * count);
+
+int clocs_compute_iou_gpu_sparse(at::Tensor boxes3d_projected, 
+                                at::Tensor boxes_2d, 
+                                at::Tensor scores_3d, 
+                                at::Tensor scores_2d, 
+                                at::Tensor dis_to_lidar_3d,
+                                at::Tensor overlap){
 
     CHECK_INPUT(boxes3d_projected);
     CHECK_INPUT(boxes_2d);
@@ -61,8 +73,8 @@ int clocs_compute_iou_gpu(at::Tensor boxes3d_projected,
     CHECK_INPUT(dis_to_lidar_3d);
     CHECK_INPUT(overlap);
 
-    int num_3d = boxes3d_projected.size(0);
-    int num_2d = boxes_2d.size(0);
+    const int num_3d = boxes3d_projected.size(0);
+    const int num_2d = boxes_2d.size(0);
 
 
     const float * boxes3d_data = boxes3d_projected.data<float>();
@@ -72,20 +84,62 @@ int clocs_compute_iou_gpu(at::Tensor boxes3d_projected,
     float * dis_to_lidar_3d_data = dis_to_lidar_3d.data<float>();
     float * overlap_data = overlap.data<float>();
 
-    clocscomputeiouLauncher(num_3d, 
-                            num_2d, 
-                            boxes3d_data, 
-                            boxes2d_data, 
-                            scores_3d_data, 
-                            scores_2d_data, 
-                            dis_to_lidar_3d_data,
-                            overlap_data);
+    clocscomputeiousparseLauncher(num_3d, 
+                                num_2d, 
+                                boxes3d_data, 
+                                boxes2d_data, 
+                                scores_3d_data, 
+                                scores_2d_data, 
+                                dis_to_lidar_3d_data,
+                                overlap_data);
     return 1;
 }
 
 
+int clocs_compute_iou_gpu_dense(at::Tensor boxes3d_projected, 
+                                at::Tensor boxes_2d, 
+                                at::Tensor scores_3d, 
+                                at::Tensor scores_2d,
+                                at::Tensor dis_to_lidar_3d,
+                                at::Tensor max_num,
+                                at::Tensor overlap,
+                                at::Tensor tensor_idx,
+                                at::Tensor count){
 
+    
+    CHECK_INPUT(boxes3d_projected);
+    CHECK_INPUT(boxes_2d);
+    CHECK_INPUT(scores_3d);
+    CHECK_INPUT(scores_2d);
+    CHECK_INPUT(dis_to_lidar_3d);
+    CHECK_INPUT(overlap);
+    CHECK_INPUT(tensor_idx);
+    CHECK_INPUT(count);
+    CHECK_INPUT(max_num);
 
+    const int num_3d = boxes3d_projected.size(0);
+    const int num_2d = boxes_2d.size(0);
 
+    const float * boxes3d_data = boxes3d_projected.data<float>();
+    const float * boxes2d_data = boxes_2d.data<float>();
+    float * scores_3d_data = scores_3d.data<float>();
+    float * scores_2d_data = scores_2d.data<float>();
+    float * dis_to_lidar_3d_data = dis_to_lidar_3d.data<float>();
+    float * overlap_data = overlap.data<float>();
+    int * tensor_idx_data = tensor_idx.data<int>();
+    const int * max_num_data = max_num.data<int>();
+    int * count_data = count.data<int>();
 
-;
+    clocscomputeioudenseLauncher(num_3d, 
+                                num_2d, 
+                                max_num_data,
+                                boxes3d_data, 
+                                boxes2d_data, 
+                                scores_3d_data, 
+                                scores_2d_data, 
+                                dis_to_lidar_3d_data,
+                                overlap_data,
+                                tensor_idx_data,
+                                count_data);
+    return 1;
+};
