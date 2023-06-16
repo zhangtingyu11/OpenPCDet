@@ -84,5 +84,31 @@
                 "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth"               
             ]
         },
+        {
+            "name": "Generate_mask",
+            "type": "python",
+            "request": "launch",
+            "cwd":"${workspaceFolder}/tools",
+            "program": "generate_mask.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "LD_LIBRARY_PATH":"$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
+                "CUDA_VISIBLE_DEVICES":"1",
+            }
+        },
+        {
+            "name": "Search Valid Space",
+            "type": "python",
+            "request": "launch",
+            "cwd":"${workspaceFolder}/tools",
+            "program": "search_valid_space.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "LD_LIBRARY_PATH":"$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
+                "CUDA_VISIBLE_DEVICES":"1",
+            }
+        },
     ]
 }

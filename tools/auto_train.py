@@ -29,5 +29,6 @@ while(loops>0):
     seed = random.randint(1, 10000)
     # os.system('python train.py --cfg_file cfgs/kitti_models/second_car_clocs.yaml --fix_random_seed ' + str(seed) + ' --extra_tag dense_' + str(seed) +
     #           ' --pretrained_model ../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth')
-    os.system('python train.py --cfg_file cfgs/kitti_models/second_car_clocs.yaml --fix_random_seed ' + str(seed) + ' --extra_tag dense_' + str(seed))
+    os.system('python train.py --cfg_file cfgs/kitti_models/second_car_clocs_contra.yaml --fix_random_seed ' + str(seed) + ' --extra_tag epoch10_sparse_weight0.001_seed' + str(seed) +\
+        ' --pretrained_model ../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth')
     loops-=1
