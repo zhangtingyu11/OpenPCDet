@@ -6,7 +6,7 @@ import random
 import numpy as np
 import open3d as o3d
 import pickle
-from pcdet.utils.box_utils import boxes3d_kitti_camera_to_lidar, boxes3d_kitti_camera_to_imageboxes, boxes3d_lidar_to_kitti_camera
+from pcdet.utils.box_utils import boxes3d_kitti_camera_to_lidar, boxes3d_kitti_camera_to_imageboxes, boxes3d_lidar_to_kitti_camera, boxes_to_corners_3d
 from pcdet.utils import calibration_kitti
 from pcdet.ops.iou3d_nms import iou3d_nms_utils
 import cv2
@@ -16,7 +16,7 @@ HEIGHT_LIMIT = -1.5
 ANGLE_LIMIT = 40.69
 RANGE_NUM = 100
 GT_SAMPLING_NUM=1
-FRAME_ID = '007409'
+FRAME_ID = '000004'
 DATA_ROOT = '../data/kitti/training'
 
 def cls_type_to_id(cls_type):
@@ -186,30 +186,12 @@ class SearchValidSpace:
         #* 将numpy数组转成open3d格式的点云
         point_cloud = o3d.geometry.PointCloud()
         point_cloud.points = o3d.utility.Vector3dVector(lidar_points[:, :3])
-        vis = o3d.visualization.Visualizer()
-        #设置窗口标题
-        vis.create_window(window_name="kitti")
-        #设置点云大小
-        vis.get_render_option().point_size = 1
-        #设置颜色背景为黑色
-        opt = vis.get_render_option()
-        opt.background_color = np.asarray([1,1,1])
 
-        #创建点云对象
-        #将点云数据转换为Open3d可以直接使用的数据类型
-        #设置点的颜色为白色
-        point_cloud.paint_uniform_color([0, 0, 0])
-        #将点云加入到窗口中
-        vis.add_geometry(point_cloud)
         #* 对点云地面进行过滤
         _, inliers = point_cloud.segment_plane(distance_threshold=0.1, ransac_n=3, num_iterations=1000)
 
         #* 选择非地面点
         outlier_cloud = point_cloud.select_by_index(inliers, invert=True)
-
-
-        vis.run()
-        vis.destroy_window()
         
         #* 转化成numpy数组
         points_np = np.asarray(outlier_cloud.points)
@@ -387,8 +369,10 @@ class SearchValidSpace:
             r_idx = int(range_idx//12.5)
             if(len(database[angle_idx][r_idx]) == 0):
                 continue
-            random_idx = random.randint(0, len(database[angle_idx][r_idx])-1)
-            cur_filename = database[angle_idx][r_idx][random_idx]
+            # random_idx = random.randint(0, len(database[angle_idx][r_idx])-1)
+            # cur_filename = database[angle_idx][r_idx][random_idx]
+            random_idx = random.randint(0, len(database[angle_idx][1])-1)
+            cur_filename = database[angle_idx][1][random_idx]
             
             pre, _ = cur_filename.split('.')
             frame_id, cls_type, idx = pre.split('_')
@@ -407,7 +391,6 @@ class SearchValidSpace:
             added_object = np.expand_dims(added_object, axis=0)
             #* 转到lidar坐标系
             added_object = boxes3d_kitti_camera_to_lidar(added_object, calib)
-            #TODO 
             a, b, c, d = self.get_plane_data(plane_file)
             center_cam = calib.lidar_to_rect(added_object[:, 0:3])
             cur_height_cam = (-d - a * center_cam[:, 0] - c * center_cam[:, 2]) / b
@@ -422,6 +405,8 @@ class SearchValidSpace:
             r = (range_idx+0.5)*range_interval
             center_x = np.cos(np.deg2rad(angle)) * r
             center_y = np.sin(np.deg2rad(angle)) * r
+
+            
             
             #* 将点云增加到特定位置
             added_bin_file = '../data/kitti/gt_database/'  + pre + '.bin'
@@ -433,6 +418,10 @@ class SearchValidSpace:
             #* 将障碍物的中心点改变
             added_object[0][0] = center_y
             added_object[0][1] = -center_x
+            
+            boxes_corners = boxes_to_corners_3d(added_object)
+            with open('box_corners.bin', 'w') as f:
+                boxes_corners.tofile(f)
             
             #* 和已经添加的框计算iou, 必须无碰撞
             iou = iou3d_nms_utils.boxes_bev_iou_cpu(added_object[:, 0:7], boxes_lidar_3d_label_array[:, 0:7])
@@ -454,6 +443,9 @@ class SearchValidSpace:
                 croped_image[mask] = added_image[(new_top-top):(new_bottom-top), (new_left-left):(new_right-left)][mask]
                 origin_image[new_top:new_bottom, new_left:new_right] = croped_image
                 added_boxes_coor.append([new_top, new_left, new_bottom, new_right])
+                with open('added_lidar.bin', 'w') as f:
+                    added_points[:, :3].tofile(f)
+                print(cur_filename)
         
         for new_top, new_left, new_bottom, new_right in added_boxes_coor:
             cv2.rectangle(origin_image, (new_left, new_top), (new_right, new_bottom), color = (0, 0, 255))
