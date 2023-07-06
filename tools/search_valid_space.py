@@ -10,6 +10,7 @@ from pcdet.utils.box_utils import boxes3d_kitti_camera_to_lidar, boxes3d_kitti_c
 from pcdet.utils import calibration_kitti
 from pcdet.ops.iou3d_nms import iou3d_nms_utils
 import cv2
+import scipy
 
 RANGE_LIMIT = 80
 HEIGHT_LIMIT = -1.5
@@ -92,7 +93,6 @@ class Object3d(object):
                        self.box2d[2], self.box2d[3], self.h, self.w, self.l, self.loc[0], self.loc[1], self.loc[2],
                        self.ry)
         return kitti_str
-
 
 class SearchValidSpace:
     def __init__(self, data_root, frame_id, range_limit, height_limit, angle_limit, range_num) -> None:
@@ -440,6 +440,7 @@ class SearchValidSpace:
                 croped_image = origin_image[new_top:new_bottom, new_left:new_right]
                 alpha1 = added_image[(new_top-top):(new_bottom-top), (new_left-left):(new_right-left)][:, :, 3]
                 mask = alpha1 > 0
+                #! 直接粘贴
                 croped_image[mask] = added_image[(new_top-top):(new_bottom-top), (new_left-left):(new_right-left)][mask]
                 origin_image[new_top:new_bottom, new_left:new_right] = croped_image
                 added_boxes_coor.append([new_top, new_left, new_bottom, new_right])
