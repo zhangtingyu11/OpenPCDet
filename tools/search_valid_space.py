@@ -10,13 +10,14 @@ from pcdet.utils.box_utils import boxes3d_kitti_camera_to_lidar, boxes3d_kitti_c
 from pcdet.utils import calibration_kitti
 from pcdet.ops.iou3d_nms import iou3d_nms_utils
 import cv2
+import scipy
 
 RANGE_LIMIT = 80
 HEIGHT_LIMIT = -1.5
 ANGLE_LIMIT = 40.69
 RANGE_NUM = 100
-GT_SAMPLING_NUM=1
-FRAME_ID = '007409'
+GT_SAMPLING_NUM=5
+FRAME_ID = '000004'
 DATA_ROOT = '../data/kitti/training'
 
 def cls_type_to_id(cls_type):
@@ -92,7 +93,6 @@ class Object3d(object):
                        self.box2d[2], self.box2d[3], self.h, self.w, self.l, self.loc[0], self.loc[1], self.loc[2],
                        self.ry)
         return kitti_str
-
 
 class SearchValidSpace:
     def __init__(self, data_root, frame_id, range_limit, height_limit, angle_limit, range_num) -> None:
@@ -206,10 +206,8 @@ class SearchValidSpace:
 
         #* 选择非地面点
         outlier_cloud = point_cloud.select_by_index(inliers, invert=True)
-
-
-        vis.run()
-        vis.destroy_window()
+        # vis.run()
+        # vis.destroy_window()
         
         #* 转化成numpy数组
         points_np = np.asarray(outlier_cloud.points)
@@ -451,9 +449,15 @@ class SearchValidSpace:
                 croped_image = origin_image[new_top:new_bottom, new_left:new_right]
                 alpha1 = added_image[(new_top-top):(new_bottom-top), (new_left-left):(new_right-left)][:, :, 3]
                 mask = alpha1 > 0
+                #! 直接粘贴
                 croped_image[mask] = added_image[(new_top-top):(new_bottom-top), (new_left-left):(new_right-left)][mask]
                 origin_image[new_top:new_bottom, new_left:new_right] = croped_image
                 added_boxes_coor.append([new_top, new_left, new_bottom, new_right])
+                #! 用opencv进行融合
+                # added_boxes_coor.append([new_top, new_left, new_bottom, new_right])
+                # center = ((new_left+new_right)//2, (new_top+new_bottom)//2, )
+                # origin_image = cv2.seamlessClone(added_image[:, :, :3], origin_image[:, :, :3], mask.astype(np.uint8)*255, center, cv2.NORMAL_CLONE)
+                
         
         for new_top, new_left, new_bottom, new_right in added_boxes_coor:
             cv2.rectangle(origin_image, (new_left, new_top), (new_right, new_bottom), color = (0, 0, 255))
