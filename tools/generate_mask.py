@@ -1,7 +1,7 @@
 from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-
+import os
 import numpy as np
 import cv2
 from math import *
@@ -17,9 +17,9 @@ l_model_type = 'vit_l'
 h_model_type = 'vit_h'
 b_model_type = 'vit_b'
 
-h_checkpoint_path = "/home/public/zty/Project/DeepLearningProject/segment-anything/weights/sam_vit_h_4b8939.pth"
-l_checkpoint_path = "/home/public/zty/Project/DeepLearningProject/segment-anything/weights/sam_vit_l_0b3195.pth"
-b_checkpoint_path = "/home/public/zty/Project/DeepLearningProject/segment-anything/weights/sam_vit_b_01ec64.pth"
+h_checkpoint_path = "./weights/sam_vit_h_4b8939.pth"
+l_checkpoint_path = "./weights/sam_vit_l_0b3195.pth"
+b_checkpoint_path = "./weights/sam_vit_b_01ec64.pth"
 
 logging.getLogger().setLevel(logging.INFO)
 
@@ -183,6 +183,9 @@ class Segment_Ground_Truth_KITTI:
         if data_root is None:
             data_root = self.data_root
         image_name = [str(frame_id).zfill(6), cls_type, str(cnt)]
+        save_dir = data_root / split
+        if(not os.path.exists(save_dir.resolve().as_posix())):
+            os.makedirs(save_dir)
         save_address = data_root / split / ('_'.join(image_name) + '.png')
         result = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
         cv2.imwrite(save_address.resolve().as_posix(), result)
@@ -210,11 +213,7 @@ class Segment_Ground_Truth_KITTI:
         frame_id_str = str(frame_id).zfill(6)
         assert self.split in ['train', 'val', 'trainval']
         label_txt = self.data_root / 'training' / 'label_2' / (frame_id_str+'.txt')
-        # def filter_func(obj):
-        #     return obj.occlusion == 0 and obj.cls_type in self.choosen_class and obj.truncation == 0
         objects = get_objects_from_label(str(label_txt))
-        # if(self.choosen_class is not  None):
-        #     objects = list(filter(filter_func, objects))
             
         object_centers = []
         img_height, img_width= masks[0]['segmentation'].shape[0], masks[0]['segmentation'].shape[1],
@@ -276,7 +275,8 @@ class Segment_Ground_Truth_KITTI:
             self.read_image(sample)
             masks = self.generate_mask()
             self.save_single_scene(sample, masks)
-        with open('image_database_train.pkl', 'wb') as f:
+        save_address = self.data_root / 'image_database_train.pkl'
+        with open(save_address.resolve().as_posix(), 'wb') as f:
             pickle.dump(self.database, f)
             
     def judge_valid(self, image, label, iou = 0.7):
@@ -398,9 +398,8 @@ class Segment_Ground_Truth_KITTI:
         self.custom_save_img(final_mask, 'close_mask')
         
 if __name__ == '__main__':
-    # choosen_classes = ['Car', 'Pedestrian', 'Cyclist']
-    choosen_classes = ['Car']
-    sgtk = Segment_Ground_Truth_KITTI('../data/kitti', 'train', choosen_classes)
+    choosen_classes = ['Car', 'Pedestrian', 'Cyclist']
+    sgtk = Segment_Ground_Truth_KITTI('./data/kitti', 'train', choosen_classes)
     #! 34
     # sgtk.read_image(34)
     # masks = sgtk.generate_mask()
