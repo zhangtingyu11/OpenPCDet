@@ -15,4 +15,5 @@ venv/
 *.bin
 output
 version.py
-*.txt
+
+
