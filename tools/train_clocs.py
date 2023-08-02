@@ -1,0 +1,119 @@
+from bs4 import BeautifulSoup
+import requests
+from mmengine.config import Config
+import os
+import os.path as osp
+
+
+def find_and_modify_key(dictionary, target_key, new_value):
+    """修改字典中的某个key为一个值
+
+    Args:
+        dictionary (_type_): 字典
+        target_key (_type_): 目标key
+        new_value (_type_): 目标值
+    """
+    for key, value in dictionary.items():
+        if key == target_key:
+            dictionary[key] = new_value
+        elif isinstance(value, dict):
+            find_and_modify_key(value, target_key, new_value)
+            
+def get_key(dictionary, target_key):
+    for key, value in dictionary.items():
+        if key == target_key:
+            return dictionary[key]
+        elif isinstance(value, dict):
+            return get_key(value, target_key)
+
+def modify_classes(dictionary, classes_value):
+    for key, value in dictionary.items():
+        if key == "dataset":
+            if("metainfo") in dictionary[key]:
+                dictionary[key]["metainfo"]["classes"] = classes_value
+            else:
+                dictionary[key]["metainfo"] = {}
+                dictionary[key]["metainfo"]["classes"] = classes_value
+        elif isinstance(value, dict):
+            modify_classes(value, classes_value)
+
+header = {"User-Agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"}
+while(True):
+    try:
+        response = requests.get("https://github.com/open-mmlab/mmdetection/tree/v3.0.0", headers = header)
+        print("访问mmdetection成功")
+        break
+    except:
+        print("访问mmdetection失败, 重试")
+        continue
+html = response.text
+soup = BeautifulSoup(html, features="html.parser")
+
+all_tables = soup.findAll("table")
+model_table = all_tables[1]
+detection_col = model_table.findAll("tr")[1]
+detection_col_td = detection_col.findAll("td")[0]
+detection_col_ul = detection_col_td.find("ul")
+for model_url in detection_col_ul.findAll("li"):
+    href = model_url.find("a")
+    link_url = href['href']
+    link_url = "https://github.com"+link_url
+    while(True):
+        try:
+            response = requests.get(link_url, headers = header)
+            print("访问{}成功".format(link_url))
+            break
+        except:
+            print("访问{}失败，重试".format(link_url))
+            continue
+    html = response.text
+    soup = BeautifulSoup(html, features="html.parser")
+    all_tables = soup.findAll("table")
+    for table in all_tables:
+        for trs in table.findAll("tr"):
+            config_file = None
+            weight_file = None            
+            for href in trs.findAll("a"):
+                if(href.text == "config"):
+                    config_file = href["href"]
+                    sp = config_file.split('/')
+                    config_file = '/'.join(sp[-3:])[:-2]
+                elif(href.text == "model"):
+                    weight_file = href["href"][2:-2]
+            if(config_file is None or weight_file is None):
+                continue
+            cfg = Config.fromfile("mmdetection/"+config_file)
+            print(cfg.pretty_text)
+            #! 修改类别
+            # find_and_modify_key(cfg, "num_classes", 3)
+            # modify_classes(cfg, ('Car', 'Pedestrian', 'Cyclist'))
+            find_and_modify_key(cfg, "num_classes", 1)
+            modify_classes(cfg, ('Car'))
+            find_and_modify_key(cfg, "load_from", weight_file)
+            batch_size = 16
+            find_and_modify_key(cfg, "batch_size", batch_size)
+            dump_filename = 'tools/image_data/'+config_file
+            sp = dump_filename.split('/')
+            dump_dir = '/'.join(sp[:-1])
+            os.makedirs(dump_dir, exist_ok=True)
+            cfg.dump('tools/image_data/'+config_file)
+            return_code = 1
+            while(return_code !=0 and batch_size!=0):
+                return_code = os.system('cd mmdetection; python tools/train.py ../tools/image_data/'+config_file + \
+                    " --work-dir " + "work_dirs_single_class/" + osp.splitext(osp.basename(config_file))[0])
+                if return_code==0:
+                    break
+                print("以batch_size{}训练{}失败".format(batch_size, config_file))
+                batch_size//=2                
+                find_and_modify_key(cfg, "batch_size", batch_size)
+                dump_filename = 'tools/image_data/'+config_file
+                sp = dump_filename.split('/')
+                dump_dir = '/'.join(sp[:-1])
+                os.makedirs(dump_dir, exist_ok=True)
+                cfg.dump('tools/image_data/'+config_file)
+            if(return_code == 0):
+                print("以batch_size{}训练{}成功".format(batch_size, config_file))
+            else:
+                print("训练{}失败".format(config_file))
+
+        
