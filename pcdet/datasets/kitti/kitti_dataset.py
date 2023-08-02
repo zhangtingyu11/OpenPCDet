@@ -1,5 +1,6 @@
 import copy
 import pickle
+import mmcv
 
 import numpy as np
 from skimage import io
@@ -90,6 +91,12 @@ class KittiDataset(DatasetTemplate):
         image = io.imread(img_file)
         image = image.astype(np.float32)
         image /= 255.0
+        return image
+    
+    def get_mmcv_image(self, idx):
+        img_file = self.root_split_path / 'image_2' / ('%s.png' % idx)
+        assert img_file.exists()
+        image = mmcv.imread(img_file)
         return image
 
     def get_image_shape(self, idx):
@@ -446,6 +453,9 @@ class KittiDataset(DatasetTemplate):
 
         if "calib_matricies" in get_item_list:
             input_dict["trans_lidar_to_cam"], input_dict["trans_cam_to_img"] = kitti_utils.calib_to_matricies(calib)
+            
+        if "mmcv_images" in get_item_list:
+            input_dict['mmcv_images'] = self.get_mmcv_image(sample_idx)
 
         input_dict['calib'] = calib
         data_dict = self.prepare_data(data_dict=input_dict)

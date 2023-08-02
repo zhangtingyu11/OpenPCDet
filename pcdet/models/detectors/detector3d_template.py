@@ -5,7 +5,7 @@ import torch.nn as nn
 import numpy as np
 from ...ops.iou3d_nms import iou3d_nms_utils
 from ...utils.spconv_utils import find_all_spconv_keys
-from .. import backbones_2d, backbones_3d, dense_heads, roi_heads, fusion_heads
+from .. import backbones_2d, backbones_3d, dense_heads, roi_heads, fusion_heads, detectors_2d
 from ..backbones_2d import map_to_bev
 from ..backbones_3d import pfe, vfe
 from ..model_utils import model_nms_utils
@@ -21,7 +21,7 @@ class Detector3DTemplate(nn.Module):
 
         self.module_topology = [
             'vfe', 'backbone_3d', 'map_to_bev_module', 'pfe',
-            'backbone_2d', 'dense_head',  'point_head', 'roi_head',
+            'backbone_2d', 'detector_2d', 'dense_head',  'point_head', 'roi_head',
             'fusion_head'
         ]
 
@@ -137,6 +137,15 @@ class Detector3DTemplate(nn.Module):
         )
         model_info_dict['module_list'].append(dense_head_module)
         return dense_head_module, model_info_dict
+
+    def build_detector_2d(self, model_info_dict):
+        if self.model_cfg.get('DETECTOR_2D', None) is None:
+            return None, model_info_dict
+        detector_2d_module = detectors_2d.__all__[self.model_cfg.DETECTOR_2D.NAME](
+            model_cfg=self.model_cfg.DETECTOR_2D,
+        )
+        model_info_dict['module_list'].append(detector_2d_module)
+        return detector_2d_module, model_info_dict
 
     def build_point_head(self, model_info_dict):
         if self.model_cfg.get('POINT_HEAD', None) is None:
