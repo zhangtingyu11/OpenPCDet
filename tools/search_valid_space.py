@@ -112,7 +112,7 @@ class SearchValidSpace:
         self.frame_idx = frame_id
         
         #* 生成各个文件的路径
-        self.bin_file = '/'.join([self.data_root, 'velodyne_reduced', frame_id+'.bin'])
+        self.bin_file = '/'.join([self.data_root, 'velodyne', frame_id+'.bin'])
         self.calib_file = '/'.join([self.data_root, 'calib', frame_id+'.txt'])
         self.database_file = '/'.join([self.data_root, '..', 'image_database_train.pkl'])
         self.label_file = '/'.join([self.data_root, 'label_2', frame_id+'.txt'])
@@ -181,25 +181,35 @@ class SearchValidSpace:
         plane_data = list(map(float, plane_data))
         return plane_data
 
-    def filter_lidar_points(self, points=None):
+    def filter_lidar_points(self, points=None, calib=None, road_planes=None):
         lidar_points = self.get_lidar_data() if points is None else points
-        #* 将numpy数组转成open3d格式的点云
-        point_cloud = o3d.geometry.PointCloud()
-        point_cloud.points = o3d.utility.Vector3dVector(lidar_points[:, :3])
-
-        #* 对点云地面进行过滤
-        _, inliers = point_cloud.segment_plane(distance_threshold=0.1, ransac_n=3, num_iterations=1000)
-
-        #* 选择非地面点
-        outlier_cloud = point_cloud.select_by_index(inliers, invert=True)
-        
-        #* 转化成numpy数组
-        points_np = np.asarray(outlier_cloud.points)
-        #* 对点云的高度进行过滤，过滤低于一定高度的点云
-        points_np = points_np[points_np[:, 2] > HEIGHT_LIMIT]
-        #* 对超过一定距离的点云进行过滤
-        points_np = points_np[np.linalg.norm(points_np[:, :2], axis=-1) <= RANGE_LIMIT]
+        lidar_calib = self.get_calib_data() if calib is None else points
+        lidar_planes = self.get_plane_data() if road_planes is None else road_planes
+        a, b, c, d = lidar_planes
+        points_rect = lidar_calib.lidar_to_rect(lidar_points[:, :3])
+        points_rect_height = (-d - a * points_rect[:, 0] - c * points_rect[:, 2]) / b
+        valid_mask = points_rect_height >= points_rect[:, 1]+0.5
+        points_np = lidar_points[valid_mask]
         return points_np
+        
+        # #* 将numpy数组转成open3d格式的点云
+        # point_cloud = o3d.geometry.PointCloud()
+        # point_cloud.points = o3d.utility.Vector3dVector(lidar_points[:, :3])
+
+        # #* 对点云地面进行过滤
+        # _, inliers = point_cloud.segment_plane(distance_threshold=0.1, ransac_n=3, num_iterations=1000)
+
+        # #* 选择非地面点
+        # outlier_cloud = point_cloud.select_by_index(inliers, invert=True)
+        
+        # #* 转化成numpy数组
+        # points_np = np.asarray(outlier_cloud.points)
+        # #* 对点云的高度进行过滤，过滤低于一定高度的点云
+        # points_np = points_np[points_np[:, 2] > HEIGHT_LIMIT]
+        # #* 对超过一定距离的点云进行过滤
+        # points_np = points_np[np.linalg.norm(points_np[:, :2], axis=-1) <= RANGE_LIMIT]
+        # return points_np
+        
 
     def plot_lidar(self, points):
         self.ax.scatter(-points[:, 1], points[:, 0], s=0.1, c='#000000')
@@ -326,7 +336,7 @@ class SearchValidSpace:
         #* 设置采样的概率, 越靠后的位置采样概率越大, 并且最小的10个距离索引不会采样
         decay_factor = 0.05
         probabilities = np.array([np.exp(decay_factor*unoccupied_indexs[i][1]) if unoccupied_indexs[i][1] > 20 else 0 for i in range(unoccupied_indexs.shape[0])])
-        probabilities/=probabilities.sum()
+        probabilities = probabilities/probabilities.sum()
         
         #* 采样可以放置的位置
         indexs = np.random.choice(range(unoccupied_indexs.shape[0]), size=GT_SAMPLING_NUM, replace=False, p=probabilities)
