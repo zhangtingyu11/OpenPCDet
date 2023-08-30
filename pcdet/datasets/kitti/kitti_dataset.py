@@ -446,7 +446,7 @@ class KittiDataset(DatasetTemplate):
             input_dict['results_3d'] = results_3d
 
         if "images" in get_item_list:
-            input_dict['images'] = self.get_image(sample_idx)
+            input_dict['images'] = self.get_mmcv_image(sample_idx)
 
         if "depth_maps" in get_item_list:
             input_dict['depth_maps'] = self.get_depth_map(sample_idx)

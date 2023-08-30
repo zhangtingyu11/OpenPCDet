@@ -44,6 +44,15 @@ class DataAugmentor(object):
             logger=self.logger
         )
         return db_sampler
+    
+    def fusion_gt_sampling(self, config=None):
+        db_sampler = database_sampler.DataFusionSampler(
+            root_path=self.root_path,
+            sampler_cfg=config,
+            class_names=self.class_names,
+            logger=self.logger
+        )
+        return db_sampler
 
     def __getstate__(self):
         d = dict(self.__dict__)
