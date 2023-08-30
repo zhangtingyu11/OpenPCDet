@@ -10,7 +10,10 @@ class MMDetCustomModel(nn.Module):
         self.image_model = init_detector(image_detector_config_file, image_detector_weight_file, device='cuda:0')
     def forward(self, data_dict):
         #* 图像
-        images = data_dict['mmcv_images']
+        # mmcv_images = data_dict['mmcv_images']
+        images = data_dict['images']
+        # import cv2
+        # cv2.imwrite("image.png", images[0])
         images_results = []
         for image in images:
             image_result = inference_detector(self.image_model, image)

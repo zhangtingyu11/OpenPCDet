@@ -28,11 +28,11 @@ def load_data_to_gpu(batch_dict):
             continue
         elif key in ['frame_id', 'metadata', 'calib', 'image_paths','ori_shape','img_process_infos']:
             continue
-        elif key in ['images']:
-            batch_dict[key] = kornia.image_to_tensor(val).float().cuda().contiguous()
+        # elif key in ['images']:
+            # batch_dict[key] = kornia.image_to_tensor(val).float().cuda().contiguous()
         elif key in ['image_shape']:
             batch_dict[key] = torch.from_numpy(val).int().cuda()
-        elif key in ['mmcv_images']:
+        elif key in ['mmcv_images', 'images']:
             pass
         else:
             batch_dict[key] = torch.from_numpy(val).float().cuda()
