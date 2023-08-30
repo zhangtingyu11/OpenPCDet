@@ -3,7 +3,7 @@ import requests
 from mmengine.config import Config
 import os
 import os.path as osp
-
+START = "conditional_detr"
 
 def find_and_modify_key(dictionary, target_key, new_value):
     """修改字典中的某个key为一个值
@@ -54,9 +54,14 @@ model_table = all_tables[1]
 detection_col = model_table.findAll("tr")[1]
 detection_col_td = detection_col.findAll("td")[0]
 detection_col_ul = detection_col_td.find("ul")
+start_flag = False
 for model_url in detection_col_ul.findAll("li"):
     href = model_url.find("a")
     link_url = href['href']
+    if not start_flag and START not in link_url:
+        continue
+    else:
+        start_flag = True
     link_url = "https://github.com"+link_url
     while(True):
         try:
@@ -81,6 +86,8 @@ for model_url in detection_col_ul.findAll("li"):
                 elif(href.text == "model"):
                     weight_file = href["href"][2:-2]
             if(config_file is None or weight_file is None):
+                continue
+            if not os.path.exists("mmdetection/"+config_file):
                 continue
             cfg = Config.fromfile("mmdetection/"+config_file)
             print(cfg.pretty_text)
