@@ -8,10 +8,12 @@ from math import *
 from pathlib import Path
 import logging
 import pickle
+from collections import defaultdict
+from skimage import io
 
 ANGLE_LIMIT = 40.69
 RANGE_LIMIT = 80
-RANGE_NUM = 8
+RANGE_NUM = 100
 
 l_model_type = 'vit_l'
 h_model_type = 'vit_h'
@@ -104,7 +106,7 @@ class Object3d(object):
         return kitti_str
 
 class Segment_Ground_Truth_KITTI:
-    def __init__(self, data_root: str, split: str, choosen_class = None, device = 0) -> None:
+    def __init__(self, data_root: str, dbfile: str, split: str, choosen_class = None, device = 0) -> None:
         assert split in ['train', 'val', 'trainval']
         self.data_root = Path(data_root)
         self.split = split
@@ -115,6 +117,15 @@ class Segment_Ground_Truth_KITTI:
         self.mask_generator = SamAutomaticMaskGenerator(
             self.sam,
             min_mask_region_area = 1000)
+        self.db_dict = {}
+        with open(dbfile, 'rb') as f:
+            info = pickle.load(f)
+            for key, val in info.items():
+                for d in val:
+                    filename = d['path'].split('/')[-1]
+                    filename = filename.split('.')[0]
+                    self.db_dict[filename] = {}
+                    self.db_dict[filename]['num_points_in_gt'] = d['num_points_in_gt']
         
     def read_image(self, frame_id):
         frame_id_str = str(frame_id).zfill(6)
@@ -174,8 +185,31 @@ class Segment_Ground_Truth_KITTI:
     def show(self):
         plt.axis('off')
         plt.show() 
+    
+    def get_image_shape(self, idx):
+        img_file = self.root_split_path / 'image_2' / ('%s.png' % idx)
+        assert img_file.exists()
+        return np.array(io.imread(img_file).shape[:2], dtype=np.int32)
+    @staticmethod
+    def get_fov_flag(pts_rect, img_shape, calib):
+        """
+        Args:
+            pts_rect:
+            img_shape:
+            calib:
+
+        Returns:
+
+        """
+        pts_img, pts_rect_depth = calib.rect_to_img(pts_rect)
+        val_flag_1 = np.logical_and(pts_img[:, 0] >= 0, pts_img[:, 0] < img_shape[1])
+        val_flag_2 = np.logical_and(pts_img[:, 1] >= 0, pts_img[:, 1] < img_shape[0])
+        val_flag_merge = np.logical_and(val_flag_1, val_flag_2)
+        pts_valid_flag = np.logical_and(val_flag_merge, pts_rect_depth >= 0)
+
+        return pts_valid_flag
         
-    def save_img(self, img, frame_id, cls_type, cnt, data_root=None, split=None, save_to_database=True, angle_idx=None, range_idx=None):
+    def save_img(self, img, frame_id, cls_type, cnt, difficulty, data_root=None, split=None, save_to_database=True, angle_idx=None, range_idx=None):
         if split is None:
             split = self.split
         split = "image_gt_database_" + str(split) 
@@ -190,7 +224,11 @@ class Segment_Ground_Truth_KITTI:
         result = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
         cv2.imwrite(save_address.resolve().as_posix(), result)
         if(save_to_database and angle_idx is not None and range_idx is not None):
-            self.database[int(angle_idx)][int(range_idx)].append('_'.join(image_name) + '.png')
+            added_info = {}
+            added_info['image_path'] = '_'.join(image_name) + '.png'
+            added_info['difficulty'] = difficulty
+            added_info['num_points_in_gt'] = self.db_dict['_'.join(image_name)]["num_points_in_gt"]
+            self.database[cls_type][int(angle_idx)][int(range_idx)].append(added_info)
         
     def mat_save_img(self, filename='sam_mask'):
         plt.axis('off')
@@ -257,7 +295,7 @@ class Segment_Ground_Truth_KITTI:
                 range_idx = dis//(self.range_limit/self.range_num)
                 if(range_idx < 0 or range_idx >= self.range_num):
                     continue
-                self.save_img(final_mask[tly:bry+1,tlx:brx+1], frame_id, objects[idx].cls_type, idx, angle_idx = angle_idx, range_idx = range_idx)
+                self.save_img(final_mask[tly:bry+1,tlx:brx+1], frame_id, objects[idx].cls_type, idx, difficulty = objects[idx].level, angle_idx = angle_idx, range_idx = range_idx)
         logging.info('Frame id {} Finished'.format(frame_id_str))
     
     def generate_database_images(self):
@@ -270,7 +308,11 @@ class Segment_Ground_Truth_KITTI:
         self.range_num = RANGE_NUM
         self.angle_num = int((ANGLE_LIMIT*2)/(360/64))
         self.angle_interval = 360/64
-        self.database = [ [ [] for _ in range(self.range_num) ] for _ in range(self.angle_num) ]
+        self.database = {
+            'Car':[ [ [] for _ in range(self.range_num) ] for _ in range(self.angle_num) ],
+            'Pedestrian': [ [ [] for _ in range(self.range_num) ] for _ in range(self.angle_num) ], 
+            'Cyclist': [ [ [] for _ in range(self.range_num) ] for _ in range(self.angle_num) ]
+        }
         for sample in samples:
             self.read_image(sample)
             masks = self.generate_mask()
@@ -399,7 +441,7 @@ class Segment_Ground_Truth_KITTI:
         
 if __name__ == '__main__':
     choosen_classes = ['Car', 'Pedestrian', 'Cyclist']
-    sgtk = Segment_Ground_Truth_KITTI('./data/kitti', 'train', choosen_classes)
+    sgtk = Segment_Ground_Truth_KITTI('./data/kitti', './data/kitti/kitti_dbinfos_train.pkl', 'train', choosen_classes)
     #! 34
     # sgtk.read_image(34)
     # masks = sgtk.generate_mask()
