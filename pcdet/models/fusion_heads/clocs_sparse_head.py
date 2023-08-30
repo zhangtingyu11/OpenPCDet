@@ -7,61 +7,6 @@ import torch
 import numba
 import copy
 
-
-@numba.jit(nopython=True,parallel=True)
-def compute_clocs_ious(boxes, query_boxes, criterion, scores_3d, scores_2d, dis_to_lidar_3d,overlaps,tensor_index):
-    N = boxes.shape[0] #70400
-    K = query_boxes.shape[0] #30
-    ind=0
-    ind_max = ind
-    for k in range(K):
-        qbox_area = ((query_boxes[k, 2] - query_boxes[k, 0]) *
-                     (query_boxes[k, 3] - query_boxes[k, 1]))
-        for n in range(N):
-            iw = (min(boxes[n, 2], query_boxes[k, 2]) -
-                  max(boxes[n, 0], query_boxes[k, 0]))
-            if iw > 0:
-                ih = (min(boxes[n, 3], query_boxes[k, 3]) -
-                      max(boxes[n, 1], query_boxes[k, 1]))
-                if ih > 0:
-                    if criterion == -1:
-                        ua = (
-                            (boxes[n, 2] - boxes[n, 0]) *
-                            (boxes[n, 3] - boxes[n, 1]) + qbox_area - iw * ih)
-                    elif criterion == 0:
-                        ua = ((boxes[n, 2] - boxes[n, 0]) *
-                              (boxes[n, 3] - boxes[n, 1]))
-                    elif criterion == 1:
-                        ua = qbox_area
-                    else:
-                        ua = 1.0
-                    overlaps[ind,0] = iw * ih / ua
-                    overlaps[ind,1] = scores_3d[n,0]
-                    overlaps[ind,2] = scores_2d[k,0]
-                    overlaps[ind,3] = dis_to_lidar_3d[n,0]
-                    tensor_index[ind,0] = k
-                    tensor_index[ind,1] = n
-                    ind = ind+1
-
-                elif k==K-1:
-                    overlaps[ind,0] = -10
-                    overlaps[ind,1] = scores_3d[n,0]
-                    overlaps[ind,2] = -10
-                    overlaps[ind,3] = dis_to_lidar_3d[n,0]
-                    tensor_index[ind,0] = k
-                    tensor_index[ind,1] = n
-                    ind = ind+1
-            elif k==K-1:
-                overlaps[ind,0] = -10
-                overlaps[ind,1] = scores_3d[n,0]
-                overlaps[ind,2] = -10
-                overlaps[ind,3] = dis_to_lidar_3d[n,0]
-                tensor_index[ind,0] = k
-                tensor_index[ind,1] = n
-                ind = ind+1
-    if ind > ind_max:
-        ind_max = ind
-    return overlaps, tensor_index, ind
 class ClocsSparseHead(AnchorHeadTemplate):
     def __init__(self, model_cfg, input_channels, num_class, class_names, grid_size, point_cloud_range,
                  predict_boxes_when_training=True, **kwargs):
@@ -85,6 +30,7 @@ class ClocsSparseHead(AnchorHeadTemplate):
         self.maxpool = nn.MaxPool2d([self.model_cfg.MAXPOOL_DIM,1],1)
 
     def forward(self, data_dict):
+        #* 读取3D目标检测的结果
         preds = data_dict['batch_box_preds']
         #* 转成0~1之间
         pred_3d_scores = torch.sigmoid(data_dict['batch_cls_preds'])
@@ -107,20 +53,24 @@ class ClocsSparseHead(AnchorHeadTemplate):
                                                                    img_width)
         
         boxes2d_by_detector = data_dict['results_2d']
+        # boxes_2d_num = boxes2d_by_detector.shape[1]
+        # if(boxes_2d_num >= 200):
+        #     boxes2d_by_detector = boxes2d_by_detector[:, :200, :]
+        # else:
+        #     padding = torch.zeros([boxes2d_by_detector.shape[0], 200-boxes_2d_num, boxes2d_by_detector.shape[-1]], 
+        #                            device = boxes2d_by_detector.device, 
+        #                            dtype = boxes2d_by_detector.dtype)
+        #     boxes2d_by_detector = torch.cat([boxes2d_by_detector, padding], dim=1)
+        # data_dict["results_2d"] = boxes2d_by_detector
+        boxes_2d_num = boxes2d_by_detector.shape[1]
         cls_pred_list = []
         for box_2d_preds, box_2d_detector, scores_3d, dist_to_lidar_single in zip(box_preds_on_image, 
                                                                                     boxes2d_by_detector,
                                                                                     pred_3d_scores,
                                                                                     dis_to_lidar):
-            cur_pred_2d = box_2d_detector
-            k = cur_pred_2d.__len__() - 1
-            while k >= 0 and cur_pred_2d[k].sum() == 0:
-                k -= 1
-            box_2d_detector = cur_pred_2d[:k + 1]
             scores_2d = box_2d_detector[:, 4:5]
             box_2d_detector = box_2d_detector[:, :4]
             boxes_3d_num = box_2d_preds.shape[0]
-            boxes_2d_num = box_2d_detector.shape[0]
             overlap = torch.zeros((boxes_3d_num, boxes_2d_num, 4), dtype = box_2d_detector.dtype, device = box_2d_detector.device)-1
             ious = compute_clocs_iou_sparse(box_2d_preds.contiguous(),
                                         box_2d_detector.contiguous(),
@@ -155,7 +105,7 @@ class ClocsSparseHead(AnchorHeadTemplate):
             
         if not self.training or self.predict_boxes_when_training:
             data_dict['batch_cls_preds'] = cls_preds
-            data_dict['batch_box_preds'] = preds_in_lidar
+            data_dict['batch_box_preds'] = preds_in_lidar,
             data_dict['cls_preds_normalized'] = False
 
         return data_dict

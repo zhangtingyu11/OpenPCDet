@@ -6,7 +6,13 @@ from ...utils import box_utils
 import torch
 import copy
 import numba
+count = 0
 
+def print_memory():
+    global count
+    count+=1
+    allocated_memory = torch.cuda.memory_allocated()
+    print("已分配的内存量{}:{}GB".format(count, allocated_memory/(1024**3)))
 
 @numba.jit(nopython=True,parallel=True)
 def compute_clocs_iou_dense(boxes, query_boxes, scores_3d, scores_2d, dis_to_lidar_3d,overlaps,tensor_index, max_num):
@@ -80,14 +86,10 @@ class ClocsDenseHead(AnchorHeadTemplate):
         self.fuse = nn.Sequential(*self.fuse)
 
     def forward(self, data_dict):
-        preds = data_dict['results_3d'][:, :, :7]
-        pred_3d_scores = data_dict['results_3d'][:, :, 7:8]
+        preds = data_dict['batch_box_preds']
         #* 转成0~1之间
-        # pred_3d_scores = torch.sigmoid(data_dict['batch_cls_preds'])
-        # allocated_memory = torch.cuda.memory_allocated()
-        # print("已分配的内存量1:", allocated_memory)  # 输出已分配的内存量
-        # preds, pred_3d_scores= data_dict['results_3d'][:, :, :7], data_dict['results_3d'][:, :, 7:8]
-        #* 转成0~1之间
+        pred_3d_scores = torch.sigmoid(data_dict['batch_cls_preds'])
+        
         #! 计算包围框中心点到lidar的距离, clocs是计算包围框底部中心点到lidar的距离
         dis_to_lidar = torch.norm(preds[:, :, :2],p=2,dim=2,keepdim=True)/82.0
         
@@ -105,21 +107,18 @@ class ClocsDenseHead(AnchorHeadTemplate):
                                                                    calib_V2C_T, 
                                                                    img_height, 
                                                                    img_width)
-        # allocated_memory = torch.cuda.memory_allocated()
-        # print("已分配的内存量2:", allocated_memory)  #
+        
         boxes2d_by_detector = data_dict['results_2d']
         box_preds_on_image = box_preds_on_image.detach().cpu().numpy()
         boxes2d_by_detector = boxes2d_by_detector.detach().cpu().numpy()
         pred_3d_scores = pred_3d_scores.detach().cpu().numpy()
         dis_to_lidar = dis_to_lidar.detach().cpu().numpy()
-        # allocated_memory = torch.cuda.memory_allocated()
-        # print("已分配的内存量3:", allocated_memory)  #
+        
         cls_pred_list = []
         for box_2d_preds, box_2d_detector, scores_3d, dist_to_lidar_single in zip(box_preds_on_image, 
                                                                                     boxes2d_by_detector,
                                                                                     pred_3d_scores,
                                                                                     dis_to_lidar):
-            #* transform_tensor_to_numpy
             scores_2d = box_2d_detector[:, 4:5]
             box_2d_detector = box_2d_detector[:, :4]
             boxes_3d_num = box_2d_preds.shape[0]
@@ -135,8 +134,6 @@ class ClocsDenseHead(AnchorHeadTemplate):
                                                                 overlap,
                                                                 tensor_idx,
                                                                 overlap_max_num)
-            # allocated_memory = torch.cuda.memory_allocated()
-            # print("已分配的内存量4:", allocated_memory) 
             overlap_max_num = min(overlap_max_num, max_num)
             overlap_tensor = torch.FloatTensor(overlap)  #iou_test_tensor shape: [160000,4]
             tensor_index_tensor = torch.LongTensor(tensor_idx)
@@ -147,9 +144,9 @@ class ClocsDenseHead(AnchorHeadTemplate):
             non_empty_overlap_tensor = non_empty_overlap_tensor.permute(1, 0)
             inpt = torch.zeros((1, 4, boxes_2d_num, boxes_3d_num), dtype=non_empty_overlap_tensor.dtype, device = non_empty_overlap_tensor.device)-1
             inpt[0, :, non_empty_tensor_index_tensor[:, 0], non_empty_tensor_index_tensor[:, 1]] = non_empty_overlap_tensor
-            res = self.fuse(inpt)
+            inpt = self.fuse(inpt)
                 
-            output = torch.amax(res, dim = 2)
+            output = torch.amax(inpt, dim = 2)
             output = output.squeeze().reshape(1,-1,1)
             cls_pred_list.append(output)
         cls_preds = torch.cat(cls_pred_list, dim=0)
