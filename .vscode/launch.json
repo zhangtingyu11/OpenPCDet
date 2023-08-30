@@ -24,6 +24,42 @@
             ]
         },
         {
+            "name": "Train second",
+            "type": "python",
+            "request": "launch",
+            "cwd":"${workspaceFolder}/tools",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                // "LD_LIBRARY_PATH":"$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
+                // "CUDA_VISIBLE_DEVICES":"1",
+            },
+            "args":[
+                "--cfg_file",
+                "cfgs/kitti_models/second_car.yaml",
+            ]
+        },
+        {
+            "name": "Train second clocs fusion aug",
+            "type": "python",
+            "request": "launch",
+            "cwd":"${workspaceFolder}/tools",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                // "LD_LIBRARY_PATH":"$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
+                // "CUDA_VISIBLE_DEVICES":"1",
+            },
+            "args":[
+                "--cfg_file",
+                "cfgs/kitti_models/second_car_clocs_fusion_aug.yaml",
+                "--pretrained_model",
+                "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth",
+            ]
+        },
+        {
             "name": "Train clocs contra",
             "type": "python",
             "request": "launch",
@@ -88,14 +124,10 @@
             "name": "Generate_mask",
             "type": "python",
             "request": "launch",
-            "cwd":"${workspaceFolder}/tools",
-            "program": "generate_mask.py",
+            "cwd":"${workspaceFolder}",
+            "program": "tools/generate_mask.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "env": {
-                "LD_LIBRARY_PATH":"$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
-                "CUDA_VISIBLE_DEVICES":"1",
-            }
         },
         {
             "name": "Search Valid Space",
@@ -105,10 +137,6 @@
             "program": "search_valid_space.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "env": {
-                "LD_LIBRARY_PATH":"$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
-                "CUDA_VISIBLE_DEVICES":"1",
-            }
         },
     ]
 }

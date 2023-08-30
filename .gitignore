@@ -15,5 +15,7 @@ venv/
 *.bin
 output
 version.py
+tools/image_data
+*.png
 
 
