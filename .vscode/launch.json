@@ -12,10 +12,6 @@
             "program": "train.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "env": {
-                // "LD_LIBRARY_PATH":"$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
-                // "CUDA_VISIBLE_DEVICES":"1",
-            },
             "args":[
                 "--cfg_file",
                 "cfgs/kitti_models/second_car_clocs.yaml",
@@ -24,7 +20,22 @@
             ]
         },
         {
-            "name": "Train second",
+            "name": "Train VoxelRCNN clocs",
+            "type": "python",
+            "request": "launch",
+            "cwd":"${workspaceFolder}/tools",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--cfg_file",
+                "cfgs/kitti_models/voxel_rcnn_car_clocs.yaml",
+                "--pretrained_model",
+                "../output/kitti_models/voxel_rcnn_car/origin_seed6811/ckpt/checkpoint_epoch_80.pth",
+            ]
+        },
+        {
+            "name": "Train voxel rcnn",
             "type": "python",
             "request": "launch",
             "cwd":"${workspaceFolder}/tools",
@@ -37,7 +48,7 @@
             },
             "args":[
                 "--cfg_file",
-                "cfgs/kitti_models/second_car.yaml",
+                "cfgs/kitti_models/voxel_rcnn_car.yaml",
             ]
         },
         {

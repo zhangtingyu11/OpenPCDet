@@ -1150,16 +1150,16 @@ class DataFusionSampler(object):
             # cur_lidar_height = calib.rect_to_lidar(center_cam)[:, 2]
             # mv_height = added_object[:, 2] - added_object[:, 5] / 2 - cur_lidar_height
             # added_object[:, 2] -= mv_height  # lidar view
-            
-            
-            #* 将其平移到这个扇形的中心
-            angle = (angle_idx+0.5)*angle_interval+start_angle
-            r = (range_idx+0.5)*range_interval
-            center_x = np.cos(np.deg2rad(angle)) * r
-            center_y = np.sin(np.deg2rad(angle)) * r
+
+            #TODO 不放在扇形的中心        
+            # #* 将其平移到这个扇形的中心
+            # angle = (angle_idx+0.5)*angle_interval+start_angle
+            # r = (range_idx+0.5)*range_interval
+            # center_x = np.cos(np.deg2rad(angle)) * r
+            # center_y = np.sin(np.deg2rad(angle)) * r
             added_object = added_object[0]
-            added_object[0] = center_y
-            added_object[1] = -center_x
+            # added_object[0] = center_y
+            # added_object[1] = -center_x
             sampled_object['box3d_lidar'] = added_object
             sampled_object['path'] = cur_filename
             sampled_object['num_points_in_gt'] = database[angle_idx][range_idx][random_idx]["num_points_in_gt"]

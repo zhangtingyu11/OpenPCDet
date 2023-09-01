@@ -24,9 +24,13 @@ import random
 #         ' --pretrained_model ../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth')
 
 
-loops = 5
+loops = 1
 while(loops>0):
-    seed = random.randint(1, 10000)
-    os.system('python train.py --cfg_file cfgs/kitti_models/second_car_clocs_fusion_aug.yaml --fix_random_seed ' + str(seed) + ' --extra_tag retainnet_epoch10_seed' + str(seed) +\
+    # seed = random.randint(1, 10000)
+    seed = 6811
+    # os.system('python train.py --cfg_file cfgs/kitti_models/voxel_rcnn_car_clocs.yaml --fix_random_seed ' + str(seed) + ' --extra_tag retainnet_epoch10_origin_clocs_seed' + str(seed) +\
+        # ' --pretrained_model ../output/kitti_models/voxel_rcnn_car/origin_seed6811/ckpt/checkpoint_epoch_80.pth')
+    os.system('python train.py --cfg_file cfgs/kitti_models/second_car_clocs_fusion_aug.yaml --fix_random_seed ' + str(seed) + ' --extra_tag retainnet_epoch10_origin_clocs_gtsample_oripos_seed' + str(seed) +\
         ' --pretrained_model ../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth')
+
     loops-=1
