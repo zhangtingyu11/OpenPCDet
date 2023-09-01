@@ -3,34 +3,36 @@ CLASS_NAMES: ['Car']
 DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/kitti_dataset.yaml
     DATA_AUGMENTOR:
-        DISABLE_AUG_LIST: ['placeholder']
-        AUG_CONFIG_LIST:
-            - NAME: gt_sampling
-              USE_ROAD_PLANE: True
-              DB_INFO_PATH:
-                  - kitti_dbinfos_train.pkl
-              PREPARE: {
-                 filter_by_min_points: ['Car:5'],
-                 filter_by_difficulty: [-1],
-              }
+        DISABLE_AUG_LIST: ['placeholder', 'placeholder', 'random_world_flip', 'random_world_rotation', 'random_world_scaling', 'gt_sampling']
+        # AUG_CONFIG_LIST:
+        #     - NAME: gt_sampling
+        #       USE_ROAD_PLANE: True
+        #       DB_INFO_PATH:
+        #           - kitti_dbinfos_train.pkl
+        #       PREPARE: {
+        #          filter_by_min_points: ['Car:5'],
+        #          filter_by_difficulty: [-1],
+        #       }
 
-              SAMPLE_GROUPS: ['Car:15']
-              NUM_POINT_FEATURES: 4
-              DATABASE_WITH_FAKELIDAR: False
-              REMOVE_EXTRA_WIDTH: [0.0, 0.0, 0.0]
-              LIMIT_WHOLE_SCENE: False
+        #       SAMPLE_GROUPS: ['Car:15']
+        #       NUM_POINT_FEATURES: 4
+        #       DATABASE_WITH_FAKELIDAR: False
+        #       REMOVE_EXTRA_WIDTH: [0.0, 0.0, 0.0]
+        #       LIMIT_WHOLE_SCENE: False
 
-            - NAME: random_world_flip
-              ALONG_AXIS_LIST: ['x']
+        #     - NAME: random_world_flip
+        #       ALONG_AXIS_LIST: ['x']
 
-            - NAME: random_world_rotation
-              WORLD_ROT_ANGLE: [-0.78539816, 0.78539816]
+        #     - NAME: random_world_rotation
+        #       WORLD_ROT_ANGLE: [-0.78539816, 0.78539816]
 
-            - NAME: random_world_scaling
-              WORLD_SCALE_RANGE: [0.95, 1.05]
+        #     - NAME: random_world_scaling
+        #       WORLD_SCALE_RANGE: [0.95, 1.05]
+    GET_ITEM_LIST: ["points", "mmcv_images", "images", "gt_boxes2d"]
+
      
 MODEL:
-    NAME: VoxelRCNN
+    NAME: ClocsNet
 
     VFE:
         NAME: MeanVFE
@@ -50,7 +52,10 @@ MODEL:
         NUM_FILTERS: [64, 128]
         UPSAMPLE_STRIDES: [1, 2]
         NUM_UPSAMPLE_FILTERS: [128, 128]
-
+    DETECTOR_2D:
+        NAME: MMDetCustomModel
+        IMAGE_DETECTOR_CONFIG_FILE: '/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/retinanet_r18_fpn_1x_coco/20230801_120418/vis_data/config.py'
+        IMAGE_DETECTOR_WEIGHTS_FILE: '/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/retinanet_r18_fpn_1x_coco/epoch_12.pth'
     DENSE_HEAD:
         NAME: AnchorHeadSingle
         CLASS_AGNOSTIC: False
@@ -164,10 +169,31 @@ MODEL:
                 'rcnn_iou3d_weight': 1.0,
                 'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
             }
+        PREDICT_BOXES_WHEN_TRAINING: True
+    FUSION_HEAD:
+        NAME: ClocsVoxelRCNNHead
+        CLASS_AGNOSTIC: False
+        INPUT_FEATURES: 4
+        OVERLAP_MAX_NUM: 
+        LOSS_CONFIG:
+            CLS_LOSS: BinaryCrossEntropy
+            REG_LOSS: smooth-l1
+            CORNER_LOSS_REGULARIZATION: True
+            GRID_3D_IOU_LOSS: False
+            LOSS_WEIGHTS: {
+                'rcnn_cls_weight': 1.0,
+                'rcnn_reg_weight': 1.0,
+                'rcnn_corner_weight': 1.0,
+                'rcnn_iou3d_weight': 1.0,
+                'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+            }
+
+        NUM_FILTERS: [18, 36, 36, 1]
+        MAXPOOL_DIM: 200
 
     POST_PROCESSING:
         RECALL_THRESH_LIST: [0.3, 0.5, 0.7]
-        SCORE_THRESH: 0.3
+        SCORE_THRESH: 0.2
         OUTPUT_RAW_SCORE: False
 
         EVAL_METRIC: kitti
@@ -175,14 +201,14 @@ MODEL:
         NMS_CONFIG:
             MULTI_CLASSES_NMS: False
             NMS_TYPE: nms_gpu
-            NMS_THRESH: 0.1
-            NMS_PRE_MAXSIZE: 4096
+            NMS_THRESH: 0.01
+            NMS_PRE_MAXSIZE: 1000
             NMS_POST_MAXSIZE: 500
 
 
 OPTIMIZATION:
-    BATCH_SIZE_PER_GPU: 16
-    NUM_EPOCHS: 80
+    BATCH_SIZE_PER_GPU: 1
+    NUM_EPOCHS: 1
 
     OPTIMIZER: adam_onecycle
     LR: 0.01

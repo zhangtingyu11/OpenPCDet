@@ -106,7 +106,7 @@ MODEL:
 
         PREDICT_BOXES_WHEN_TRAINING: True
     FUSION_HEAD:
-        NAME: ClocsSparseHead
+        NAME: ClocsSECONDHead
         CLASS_AGNOSTIC: False
         INPUT_FEATURES: 4
         OVERLAP_MAX_NUM: 900000
