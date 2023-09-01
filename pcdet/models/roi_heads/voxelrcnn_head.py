@@ -13,7 +13,7 @@ class VoxelRCNNHead(RoIHeadTemplate):
         LAYER_cfg = self.pool_cfg.POOL_LAYERS
         self.point_cloud_range = point_cloud_range
         self.voxel_size = voxel_size
-
+        self.predict_boxes_when_training = model_cfg.get('PREDICT_BOXES_WHEN_TRAINING', False)
         c_out = 0
         self.roi_grid_pool_layers = nn.ModuleList()
         for src_name in self.pool_cfg.FEATURES_SOURCE:
@@ -223,7 +223,7 @@ class VoxelRCNNHead(RoIHeadTemplate):
         targets_dict = self.proposal_layer(
             batch_dict, nms_config=self.model_cfg.NMS_CONFIG['TRAIN' if self.training else 'TEST']
         )
-        if self.training:
+        if self.training or self.predict_boxes_when_training:
             targets_dict = self.assign_targets(batch_dict)
             batch_dict['rois'] = targets_dict['rois']
             batch_dict['roi_labels'] = targets_dict['roi_labels']
@@ -246,17 +246,15 @@ class VoxelRCNNHead(RoIHeadTemplate):
         # rcnn_cls = self.cls_layers(shared_features).transpose(1, 2).contiguous().squeeze(dim=1)  # (B, 1 or 2)
         # rcnn_reg = self.reg_layers(shared_features).transpose(1, 2).contiguous().squeeze(dim=1)  # (B, C)
 
-        if not self.training:
+        if not self.training or self.predict_boxes_when_training:
             batch_cls_preds, batch_box_preds = self.generate_predicted_boxes(
                 batch_size=batch_dict['batch_size'], rois=batch_dict['rois'], cls_preds=rcnn_cls, box_preds=rcnn_reg
             )
             batch_dict['batch_cls_preds'] = batch_cls_preds
             batch_dict['batch_box_preds'] = batch_box_preds
             batch_dict['cls_preds_normalized'] = False
-        else:
             targets_dict['rcnn_cls'] = rcnn_cls
             targets_dict['rcnn_reg'] = rcnn_reg
-
             self.forward_ret_dict = targets_dict
-
+        batch_dict['forward_ret_dict'] = self.forward_ret_dict
         return batch_dict
