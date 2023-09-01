@@ -6,8 +6,22 @@ from ..dense_heads.anchor_head_template import AnchorHeadTemplate
 import torch
 import numba
 import copy
-
-class ClocsSparseHead(AnchorHeadTemplate):
+# class ResidualBlockForClocs(nn.Module):
+#     def __init__(self, in_channels, out_channels):
+#         super().__init__()
+#         self.conv1 = nn.Conv2d(in_channels, out_channels, 1)
+#         self.bn1 = nn.SyncBatchNorm(out_channels)
+#         self.relu1 = nn.ReLU()
+#         self.conv2 = nn.Conv2d(out_channels, out_channels, 1)
+#         self.bn2 = nn.SyncBatchNorm(out_channels)
+#         self.relu2 = nn.ReLU()
+#     def forward(self, x):
+#         output = self.relu1(self.bn1(self.conv1(x)))
+#         output = self.bn2(self.conv2(output))+x
+#         output = self.relu2(output)
+#         return output
+        
+class ClocsSECONDHead(AnchorHeadTemplate):
     def __init__(self, model_cfg, input_channels, num_class, class_names, grid_size, point_cloud_range,
                  predict_boxes_when_training=True, **kwargs):
         super().__init__(
@@ -22,8 +36,11 @@ class ClocsSparseHead(AnchorHeadTemplate):
         
         self.fuse = []
         for i in range(1, len(num_filters)-1):
-            self.fuse.append(nn.Conv2d(num_filters[i-1], num_filters[i], 1))
-            self.fuse.append(nn.ReLU())
+            # if(num_filters[i-1] == num_filters[i]):
+            #     self.fuse.append(ResidualBlockForClocs(num_filters[i-1], num_filters[i]))
+            # else:
+                self.fuse.append(nn.Conv2d(num_filters[i-1], num_filters[i], 1))
+                self.fuse.append(nn.ReLU())
         self.fuse.append(nn.Conv2d(num_filters[-2], num_filters[-1], 1))
         self.fuse = nn.Sequential(*self.fuse)
         self.maxpool_dim = self.model_cfg.MAXPOOL_DIM
@@ -72,18 +89,22 @@ class ClocsSparseHead(AnchorHeadTemplate):
             box_2d_detector = box_2d_detector[:, :4]
             boxes_3d_num = box_2d_preds.shape[0]
             overlap = torch.zeros((boxes_3d_num, boxes_2d_num, 4), dtype = box_2d_detector.dtype, device = box_2d_detector.device)-1
+            # overlap = torch.zeros((boxes_3d_num, boxes_2d_num, 5), dtype = box_2d_detector.dtype, device = box_2d_detector.device)-1
+            
             ious = compute_clocs_iou_sparse(box_2d_preds.contiguous(),
                                         box_2d_detector.contiguous(),
                                         scores_3d,
                                         scores_2d.contiguous(),
                                         dist_to_lidar_single,
                                         overlap)
-
+            # mask = torch.sum(ious[:, :, 4], dim=-1) !=0
+            # ious[mask, : ,4] = 1
+            # ious = ious.permute(2, 0, 1).view(1, 5, boxes_3d_num, boxes_2d_num)
             ious = ious.permute(2, 0, 1).view(1, 4, boxes_3d_num, boxes_2d_num)
             res = self.fuse(ious)
                 
             output = torch.amax(res, dim = -1)
-            output = output.squeeze().reshape(1,-1,1)
+            output = output.squeeze().view(1,-1,1)
             cls_pred_list.append(output)
         cls_preds = torch.cat(cls_pred_list, dim=0)
         
