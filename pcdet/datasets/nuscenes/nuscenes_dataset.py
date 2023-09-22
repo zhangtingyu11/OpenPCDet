@@ -53,19 +53,24 @@ class NuScenesDataset(DatasetTemplate):
             return infos
 
         cls_infos = {name: [] for name in self.class_names}
+        #* 如果一帧中有类别中的物体, 就把这一帧加到这个数据库中
         for info in infos:
             for name in set(info['gt_names']):
                 if name in self.class_names:
                     cls_infos[name].append(info)
-
+        
+        #* 每一个类别的sample数的和(会重复计算)
         duplicated_samples = sum([len(v) for _, v in cls_infos.items()])
+        #* 每个类别占的百分比
         cls_dist = {k: len(v) / duplicated_samples for k, v in cls_infos.items()}
 
         sampled_infos = []
 
         frac = 1.0 / len(self.class_names)
+        #* 总共10个类别, 如果样本个数超过了1/10, 就会多采样一些, 否则就少采样一些
         ratios = [frac / v for v in cls_dist.values()]
 
+        #* 采样
         for cur_cls_infos, ratio in zip(list(cls_infos.values()), ratios):
             sampled_infos += np.random.choice(
                 cur_cls_infos, int(len(cur_cls_infos) * ratio)
