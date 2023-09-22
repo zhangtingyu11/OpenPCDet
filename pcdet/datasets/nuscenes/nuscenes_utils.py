@@ -330,6 +330,21 @@ def fill_trainval_infos(data_path, nusc, train_scenes, val_scenes, test=False, m
 
         ref_cam_front_token = sample['data']['CAM_FRONT']
         ref_cam_path, _, ref_cam_intrinsic = nusc.get_sample_data(ref_cam_front_token)
+        
+        ref_cam_front_left_token = sample['data']['CAM_FRONT_LEFT']
+        ref_cam_front_left_path, _, ref_cam_front_left_intrinsic = nusc.get_sample_data(ref_cam_front_left_token)
+        
+        ref_cam_front_right_token = sample['data']['CAM_FRONT_RIGHT']
+        ref_cam_front_right_path, _, ref_cam_front_right_intrinsic = nusc.get_sample_data(ref_cam_front_right_token)
+        
+        ref_cam_back_token = sample['data']['CAM_BACK']
+        ref_cam_back_path, _, ref_cam_back_intrinsic = nusc.get_sample_data(ref_cam_back_token)
+        
+        ref_cam_back_left_token = sample['data']['CAM_BACK_LEFT']
+        ref_cam_back_left_path, _, ref_cam_back_left_intrinsic = nusc.get_sample_data(ref_cam_back_left_token)
+        
+        ref_cam_back_right_token = sample['data']['CAM_BACK_RIGHT']
+        ref_cam_back_right_path, _, ref_cam_back_right_intrinsic = nusc.get_sample_data(ref_cam_back_right_token)
 
         # Homogeneous transform from ego car frame to reference frame
         ref_from_car = transform_matrix(
@@ -345,6 +360,16 @@ def fill_trainval_infos(data_path, nusc, train_scenes, val_scenes, test=False, m
             'lidar_path': Path(ref_lidar_path).relative_to(data_path).__str__(),
             'cam_front_path': Path(ref_cam_path).relative_to(data_path).__str__(),
             'cam_intrinsic': ref_cam_intrinsic,
+            'cam_front_left_path': Path(ref_cam_front_left_path).relative_to(data_path).__str__(),
+            'cam_front_left_intrinsic': ref_cam_front_left_intrinsic,
+            'cam_front_right_path': Path(ref_cam_front_right_path).relative_to(data_path).__str__(),
+            'cam_front_right_intrinsic': ref_cam_front_right_intrinsic,
+            'cam_back_path': Path(ref_cam_back_path).relative_to(data_path).__str__(),
+            'cam_back_intrinsic': ref_cam_back_intrinsic,
+            'cam_back_left_path': Path(ref_cam_back_left_path).relative_to(data_path).__str__(),
+            'cam_back_left_intrinsic': ref_cam_back_left_intrinsic,
+            'cam_back_right_path': Path(ref_cam_back_right_path).relative_to(data_path).__str__(),
+            'cam_back_right_intrinsic': ref_cam_back_right_intrinsic,
             'token': sample['token'],
             'sweeps': [],
             'ref_from_car': ref_from_car,
