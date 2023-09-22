@@ -177,15 +177,8 @@ MODEL:
         OVERLAP_MAX_NUM: 
         LOSS_CONFIG:
             CLS_LOSS: BinaryCrossEntropy
-            REG_LOSS: smooth-l1
-            CORNER_LOSS_REGULARIZATION: True
-            GRID_3D_IOU_LOSS: False
             LOSS_WEIGHTS: {
                 'rcnn_cls_weight': 1.0,
-                'rcnn_reg_weight': 1.0,
-                'rcnn_corner_weight': 1.0,
-                'rcnn_iou3d_weight': 1.0,
-                'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
             }
 
         NUM_FILTERS: [18, 36, 36, 1]
@@ -208,10 +201,10 @@ MODEL:
 
 OPTIMIZATION:
     BATCH_SIZE_PER_GPU: 1
-    NUM_EPOCHS: 1
+    NUM_EPOCHS: 80
 
     OPTIMIZER: adam_onecycle
-    LR: 0.01
+    LR: 0.003
     WEIGHT_DECAY: 0.01
     MOMENTUM: 0.9
 
