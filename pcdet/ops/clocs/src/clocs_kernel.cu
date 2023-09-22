@@ -26,6 +26,7 @@ __global__ void clocs_compute_iou_sparse_kernel(const int num_3d,
     const float * box_3d = boxes_3d + boxes3d_idx * 4;
     const float * box_2d = boxes_2d + boxes2d_idx * 4;
     float * cur_overlap = overlap + (boxes3d_idx * num_2d + boxes2d_idx) * 4;
+    // float * cur_overlap = overlap + (boxes3d_idx * num_2d + boxes2d_idx) * 3;
     
     float qbox_area = (*(box_2d+2) - *(box_2d+0)) *
                         (*(box_2d+3) - *(box_2d+1));
@@ -38,22 +39,23 @@ __global__ void clocs_compute_iou_sparse_kernel(const int num_3d,
         if(ih > 0){
             float ua = ((*(box_3d+2) - *(box_3d+0)) * 
                         (*(box_3d+3) - *(box_3d+1)) + qbox_area - iw * ih);
-            cur_overlap[0] = iw * ih /ua;
+            cur_overlap[0] = (iw * ih /ua) * scores_2d[boxes2d_idx];
             cur_overlap[1] = scores_3d[boxes3d_idx];
             cur_overlap[2] = scores_2d[boxes2d_idx];
             cur_overlap[3] = dis_to_lidar_3d[boxes3d_idx];
         }
-        else if(boxes2d_idx == num_2d-1){
+        else{
+            //* 填写-1主要是为了和iou接近于0的区别开
             cur_overlap[0] = -10;
             cur_overlap[1] = scores_3d[boxes3d_idx];
-            cur_overlap[2] = -10;
+            cur_overlap[2] = scores_2d[boxes2d_idx];
             cur_overlap[3] = dis_to_lidar_3d[boxes3d_idx];
         }
     }
-    else if(boxes2d_idx == num_2d-1){
+    else{
         cur_overlap[0] = -10;
         cur_overlap[1] = scores_3d[boxes3d_idx];
-        cur_overlap[2] = -10;
+        cur_overlap[2] = scores_2d[boxes2d_idx];
         cur_overlap[3] = dis_to_lidar_3d[boxes3d_idx];
     }
 }
