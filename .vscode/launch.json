@@ -5,14 +5,30 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Train second clocs",
+            "name": "生成nuscense数据",
             "type": "python",
             "request": "launch",
-            "cwd":"${workspaceFolder}/tools",
-            "program": "train.py",
+            "module": "pcdet.datasets.nuscenes.nuscenes_dataset", 
             "console": "integratedTerminal",
             "justMyCode": true,
             "args":[
+                "--func", 
+                "create_nuscenes_infos", 
+                "--cfg_file", 
+                "tools/cfgs/dataset_configs/nuscenes_dataset.yaml", 
+                "--version", 
+                "v1.0-trainval"
+            ]
+        },
+        {
+            "name": "Train second clocs",
+            "type": "python",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/tools",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
                 "--cfg_file",
                 "cfgs/kitti_models/second_car_clocs.yaml",
                 "--pretrained_model",
@@ -23,11 +39,11 @@
             "name": "Train VoxelRCNN clocs",
             "type": "python",
             "request": "launch",
-            "cwd":"${workspaceFolder}/tools",
+            "cwd": "${workspaceFolder}/tools",
             "program": "train.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args":[
+            "args": [
                 "--cfg_file",
                 "cfgs/kitti_models/voxel_rcnn_car_clocs.yaml",
                 "--pretrained_model",
@@ -38,7 +54,7 @@
             "name": "Train voxel rcnn",
             "type": "python",
             "request": "launch",
-            "cwd":"${workspaceFolder}/tools",
+            "cwd": "${workspaceFolder}/tools",
             "program": "train.py",
             "console": "integratedTerminal",
             "justMyCode": true,
@@ -46,7 +62,7 @@
                 // "LD_LIBRARY_PATH":"$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
                 // "CUDA_VISIBLE_DEVICES":"1",
             },
-            "args":[
+            "args": [
                 "--cfg_file",
                 "cfgs/kitti_models/voxel_rcnn_car.yaml",
             ]
@@ -55,7 +71,7 @@
             "name": "Train second clocs fusion aug",
             "type": "python",
             "request": "launch",
-            "cwd":"${workspaceFolder}/tools",
+            "cwd": "${workspaceFolder}/tools",
             "program": "train.py",
             "console": "integratedTerminal",
             "justMyCode": true,
@@ -63,7 +79,7 @@
                 // "LD_LIBRARY_PATH":"$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
                 // "CUDA_VISIBLE_DEVICES":"1",
             },
-            "args":[
+            "args": [
                 "--cfg_file",
                 "cfgs/kitti_models/second_car_clocs_fusion_aug.yaml",
                 "--pretrained_model",
@@ -74,15 +90,15 @@
             "name": "Train clocs contra",
             "type": "python",
             "request": "launch",
-            "cwd":"${workspaceFolder}/tools",
+            "cwd": "${workspaceFolder}/tools",
             "program": "train.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "env": {
-                "LD_LIBRARY_PATH":"$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
-                "CUDA_VISIBLE_DEVICES":"1",
+                "LD_LIBRARY_PATH": "$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
+                "CUDA_VISIBLE_DEVICES": "1",
             },
-            "args":[
+            "args": [
                 "--cfg_file",
                 "cfgs/kitti_models/second_car_clocs_contra.yaml",
                 "--pretrained_model",
@@ -95,15 +111,15 @@
             "name": "Train pillar clocs",
             "type": "python",
             "request": "launch",
-            "cwd":"${workspaceFolder}/tools",
+            "cwd": "${workspaceFolder}/tools",
             "program": "train.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "env": {
-                "LD_LIBRARY_PATH":"$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
-                "CUDA_VISIBLE_DEVICES":"1",
+                "LD_LIBRARY_PATH": "$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
+                "CUDA_VISIBLE_DEVICES": "1",
             },
-            "args":[
+            "args": [
                 "--cfg_file",
                 "cfgs/kitti_models/pointpillar_car_clocs.yaml",
                 "--pretrained_model",
@@ -114,29 +130,38 @@
             "name": "Test second",
             "type": "python",
             "request": "launch",
-            "cwd":"${workspaceFolder}/tools",
+            "cwd": "${workspaceFolder}/tools",
             "program": "test.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "env": {
-                "LD_LIBRARY_PATH":"$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
-                "CUDA_VISIBLE_DEVICES":"1",
+                "LD_LIBRARY_PATH": "$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
+                "CUDA_VISIBLE_DEVICES": "1",
             },
-            "args":[
+            "args": [
                 "--cfg_file",
                 "../output/kitti_models/second_car/origin/second_car.yaml",
                 "--batch_size",
                 "16",
                 "--ckpt",
-                "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth"               
+                "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth"
             ]
         },
         {
             "name": "Generate_mask",
             "type": "python",
             "request": "launch",
-            "cwd":"${workspaceFolder}",
+            "cwd": "${workspaceFolder}",
             "program": "tools/generate_mask.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+        },
+        {
+            "name": "Generate_mask_nuscenes",
+            "type": "python",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "program": "tools/generate_mask_nuscenes.py",
             "console": "integratedTerminal",
             "justMyCode": true,
         },
@@ -144,8 +169,8 @@
             "name": "Search Valid Space",
             "type": "python",
             "request": "launch",
-            "cwd":"${workspaceFolder}/tools",
-            "program": "search_valid_space.py",
+            "cwd": "${workspaceFolder}",
+            "program": "tools/search_valid_space.py",
             "console": "integratedTerminal",
             "justMyCode": true,
         },
