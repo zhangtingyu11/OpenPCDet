@@ -64,8 +64,8 @@ MODEL:
         NUM_UPSAMPLE_FILTERS: [256, 256]
     DETECTOR_2D:
         NAME: MMDetCustomModel
-        IMAGE_DETECTOR_CONFIG_FILE: '/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/retinanet_r18_fpn_1x_coco/20230801_120418/vis_data/config.py'
-        IMAGE_DETECTOR_WEIGHTS_FILE: '/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/retinanet_r18_fpn_1x_coco/epoch_12.pth'
+        IMAGE_DETECTOR_CONFIG_FILE: '/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs/libra-retinanet_r50_fpn_1x_coco/20230730_182307/vis_data/config.py'
+        IMAGE_DETECTOR_WEIGHTS_FILE: '/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs/libra-retinanet_r50_fpn_1x_coco/epoch_12.pth'
     DENSE_HEAD:
         NAME: AnchorHeadSingle
         CLASS_AGNOSTIC: False
@@ -156,7 +156,7 @@ MODEL:
 
 OPTIMIZATION:
     BATCH_SIZE_PER_GPU: 1
-    NUM_EPOCHS: 1
+    NUM_EPOCHS: 80
 
     OPTIMIZER: adam_onecycle
     LR: 0.003
