@@ -104,7 +104,7 @@ class Segment_Ground_Truth_KITTI:
         self.range_interval = self.range_limit/self.range_num
         
         #* 存储KITTI数据库的文件, 由OpenPCDet生成
-        dbfile = self.cfg['DB_INFO_PATH']
+        dbfile = self.cfg['OPENPCDET_INFO_PATH']
         #* 要存储的数据的哈希表
         #* key: 文件名字, 形如000000_Pedestrian_0, 用于记录当前这个物体的唯一标识
         #* val: 一个字典,目前只有一个key, 
@@ -351,10 +351,10 @@ class Segment_Ground_Truth_KITTI:
                     continue
                 max_iou = iou
                 amodal_rle = maskUtils.frPyObjects(ann['segmentation'], image_height, image_width)
-                inmodal_ann_mask = maskUtils.decode(ann['inmodal_seg']).astype(np.bool_)
+                amodal_ann_mask = maskUtils.decode(amodal_rle)[:, :, 0].astype(np.bool_)
             if(max_iou >= self.kins_iou_thresh):
-                final_mask[inmodal_ann_mask, :3] = self.image[inmodal_ann_mask]
-                final_mask[inmodal_ann_mask, 3] = 255
+                final_mask[amodal_ann_mask, :3] = self.image[amodal_ann_mask]
+                final_mask[amodal_ann_mask, 3] = 255
                 
                 #* 相机坐标系下包围框的x, y, z
                 x_in_camera, y_in_camera, z_in_camera = obj.loc
