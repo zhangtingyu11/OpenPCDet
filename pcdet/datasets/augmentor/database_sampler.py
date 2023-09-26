@@ -13,6 +13,7 @@ from ...ops.iou3d_nms import iou3d_nms_utils
 from ...utils import box_utils, common_utils, calibration_kitti
 from pcdet.datasets.kitti.kitti_object_eval_python import kitti_common
 import cv2
+import yaml
 
 def cls_type_to_id(cls_type):
     type_to_id = {'Car': 1, 'Pedestrian': 2, 'Cyclist': 3, 'Van': 4}
@@ -592,9 +593,28 @@ class DataFusionSampler(object):
         assert self.img_aug_type == "clocs"
         self.img_aug_iou_thresh = sampler_cfg.get('IMG_AUG_IOU_THRESH', 0.5)
 
-        self.angle_limit = self.sampler_cfg['ANGLE_LIMIT']
-        self.range_limit = self.sampler_cfg['RANGE_LIMIT']
-        self.range_num = self.sampler_cfg['RANGE_NUM']
+        cfg_path = self.sampler_cfg["CFG_PATH"]
+        self.cfg = self.cfg_from_yaml_file(cfg_path)
+        #* LIDAR线数
+        lidar_lines = self.cfg["LIDAR_LINES"]
+        #* 每个angle块占据多少角度
+        self.angle_interval = 360/lidar_lines
+        #* 以竖直向前为0度, 角度范围为-self.angle_limit ~ self.angle_limit
+        self.angle_limit = self.cfg["ANGLE_LIMIT"]
+        #* 要分多少个角度块
+        self.angle_num = int(self.angle_limit*2/self.angle_interval)
+        
+        #* 距离范围是0~self.range_limit
+        self.range_limit = self.cfg["RANGE_LIMIT"]
+        #* 要分多少个距离块
+        self.range_num = self.cfg["RANGE_NUM"]
+        #* 每个range块占据多少距离
+        self.range_interval = self.range_limit/self.range_num
+        
+        self.iof_thresh = self.cfg["IOF_THRESH"]
+        
+        self.height_limit = self.cfg["HEIGHT_LIMIT"]
+        self.start_angle = 90-self.angle_limit
         
         self.logger = logger
         self.use_shared_memory = False
@@ -634,6 +654,15 @@ class DataFusionSampler(object):
                 'indices': indices
             }
 
+    @staticmethod
+    def cfg_from_yaml_file(cfg_file):
+        with open(cfg_file, 'r') as f:
+            try:
+                config = yaml.safe_load(f, Loader=yaml.FullLoader)
+            except:
+                config = yaml.safe_load(f)
+        return config
+    
     def __getstate__(self):
         d = dict(self.__dict__)
         del d['logger']
@@ -713,7 +742,7 @@ class DataFusionSampler(object):
         a, b, c, d = lidar_planes
         points_rect = lidar_calib.lidar_to_rect(lidar_points[:, :3])
         points_rect_height = (-d - a * points_rect[:, 0] - c * points_rect[:, 2]) / b
-        valid_mask = points_rect_height >= points_rect[:, 1]+0.5
+        valid_mask = points_rect_height >= points_rect[:, 1]+self.height_limit
         points_np = lidar_points[valid_mask]
         return points_np
     
@@ -782,6 +811,7 @@ class DataFusionSampler(object):
         points_2d[:,0] = np.clip(points_2d[:,0], a_min=0, a_max=image.shape[1]-1)
         points_2d[:,1] = np.clip(points_2d[:,1], a_min=0, a_max=image.shape[0]-1)
         points_2d = points_2d.astype(np.int_)
+        cropped_images = [0]*len(paste_order)
         for _order in paste_order:
             _box2d = boxes2d[_order]
             added_image = cv2.resize(crop_feat[_order], (_box2d[2]-_box2d[0], _box2d[3]-_box2d[1]), interpolation=cv2.INTER_LINEAR)
@@ -792,6 +822,16 @@ class DataFusionSampler(object):
                 p_mask = added_image[:, :, 2]>=0
             paste_image[p_mask] = added_image[p_mask][:, :3]
             image[_box2d[1]:_box2d[3],_box2d[0]:_box2d[2]] = paste_image
+            copy_image = cv2.GaussianBlur(image, (3, 3), 0)
+            #* 原图剪切下来的物体
+            cropped_image = image[_box2d[1]:_box2d[3],_box2d[0]:_box2d[2], :]
+            if _order >= gt_number:
+                #* 模糊后的图剪切下来的物体
+                added_image = copy_image[_box2d[1]:_box2d[3],_box2d[0]:_box2d[2], :]
+                #* 原图的mask部分设置成模糊后的图的mask部分
+                cropped_image[p_mask] = added_image[p_mask]
+            cropped_images[_order] = cropped_image
+            # image[_box2d[1]:_box2d[3],_box2d[0]:_box2d[2], :] = cropped_image
             overlap_mask[_box2d[1]:_box2d[3],_box2d[0]:_box2d[2]][p_mask] += \
                 (paste_mask[_box2d[1]:_box2d[3],_box2d[0]:_box2d[2]][p_mask] > 0).astype(np.int_)
             paste_mask[_box2d[1]:_box2d[3],_box2d[0]:_box2d[2]][p_mask] = _order
@@ -804,7 +844,11 @@ class DataFusionSampler(object):
             # foreground area of original point cloud in image plane
             if _order < gt_number:
                 fg_mask[_box2d[1]:_box2d[3],_box2d[0]:_box2d[2]] = 1
-
+        for _order in paste_order:
+            _box2d = boxes2d[_order]
+            cropped_image = cropped_images[_order]
+            image[_box2d[1]:_box2d[3],_box2d[0]:_box2d[2], :] = cropped_image
+            
         data_dict['images'] = image
 
         # if not self.joint_sample:
@@ -874,7 +918,7 @@ class DataFusionSampler(object):
         img_crop2d = io.imread(str(self.root_path)+'/image_gt_database_train/'+info['path'])
         return new_box, img_crop2d, obj_points, obj_idx
 
-    def sample_gt_boxes_2d_clocs(self, data_dict, sampled_boxes, valid_mask):
+    def sample_gt_boxes_2d_clocs(self, data_dict, sampled_boxes, existed_boxes):
         mv_height = None
         # filter out box2d iou > thres
         if self.sampler_cfg.get('USE_ROAD_PLANE', False):
@@ -888,25 +932,60 @@ class DataFusionSampler(object):
                                                                         data_dict['images'].shape[:2])
         sampled_boxes2d = torch.Tensor(sampled_boxes2d)
         existed_boxes2d = torch.Tensor(data_dict['gt_boxes2d'])
-        iou2d1 = box_utils.pairwise_iou(sampled_boxes2d, existed_boxes2d).cpu().numpy()
-        iou2d2 = box_utils.pairwise_iou(sampled_boxes2d, sampled_boxes2d).cpu().numpy()
-        iou2d2[range(sampled_boxes2d.shape[0]), range(sampled_boxes2d.shape[0])] = 0
-        iou2d1 = iou2d1 if iou2d1.shape[1] > 0 else iou2d2
+        iof = 0
+        valid_flag = []
+        for idx, sampled_box2d in enumerate(sampled_boxes2d):
+            for obj in existed_boxes2d:
+                #* 计算2D包围框的iou
+                inter = self.compute_intersection(sampled_box2d, obj)
+                obj_area = self.compute_area(obj)
+                add_obj_area = self.compute_area(sampled_box2d)
+                #* 更新iof
+                if(inter/obj_area > iof):
+                    iof = inter/obj_area
+                if(inter/add_obj_area > iof):
+                    iof = inter/add_obj_area
+            iou = iou3d_nms_utils.boxes_bev_iou_cpu(sampled_boxes[idx:idx+1, 0:7], existed_boxes[:, 0:7])
+            if iof < self.iof_thresh and iou.max() == 0:
+                valid_flag.append(True)
+                existed_boxes2d = np.concatenate([existed_boxes2d, np.expand_dims(sampled_box2d, axis=0)], axis=0)
+                existed_boxes = np.concatenate([existed_boxes, sampled_boxes[idx:idx+1, 0:7]], axis=0)
+            else:
+                valid_flag.append(False)
+                
+        valid_flag = np.array(valid_flag, dtype=np.bool_)
 
-        ret_valid_mask = ((iou2d1.max(axis=1)<self.img_aug_iou_thresh) &
-                         (iou2d2.max(axis=1)<self.img_aug_iou_thresh) &
-                         (valid_mask))
+        ret_valid_mask = valid_flag
 
         sampled_boxes2d = sampled_boxes2d[ret_valid_mask].cpu().numpy()
         if mv_height is not None:
             mv_height = mv_height[ret_valid_mask]
         return sampled_boxes2d, mv_height, ret_valid_mask
 
-    def sample_gt_boxes_2d(self, data_dict, sampled_boxes, valid_mask):
+
+    def compute_intersection(self, boxes_a, boxes_b):
+        tlx, tly, brx, bry = boxes_a
+        iw = (min(brx, boxes_b[2]) -
+                max(tlx, boxes_b[0]))
+        if iw > 0:
+            #* 2D包围框和标签之间的高度的重叠的长度
+            ih = (min(bry, boxes_b[3]) -
+                    max(tly, boxes_b[1]))
+            if ih > 0:
+                return iw * ih
+        return 0
+    
+    @staticmethod
+    def compute_area(box):
+        obj_tlx, obj_tly, obj_brx, obj_bry = box
+        obj_area = (obj_brx - obj_tlx) * (obj_bry - obj_tly)
+        return obj_area
+
+    def sample_gt_boxes_2d(self, data_dict, sampled_boxes, existed_boxes):
         mv_height = None
 
         if self.img_aug_type == 'clocs':
-            sampled_boxes2d, mv_height, ret_valid_mask = self.sample_gt_boxes_2d_clocs(data_dict, sampled_boxes, valid_mask)
+            sampled_boxes2d, mv_height, ret_valid_mask = self.sample_gt_boxes_2d_clocs(data_dict, sampled_boxes, existed_boxes)
         else:
             raise NotImplementedError
 
@@ -1077,7 +1156,7 @@ class DataFusionSampler(object):
         
     def sample_with_fixed_number(self, data_dict, class_name, points, occupied, angle_interval, start_angle, range_interval, sample_num):
         #* 计算非零的索引
-        unoccupied_indexs = (occupied==False).nonzero()
+        unoccupied_indexs = (occupied==0).nonzero()
         #* -> N * 2
         unoccupied_indexs = np.concatenate([np.expand_dims(unoccupied_indexs[0], axis=-1), np.expand_dims(unoccupied_indexs[1], axis=-1)], axis=-1)
         
@@ -1087,41 +1166,22 @@ class DataFusionSampler(object):
                 new_unoccupied_indexs.append([i, j])
         unoccupied_indexs = np.array(new_unoccupied_indexs)
             
-        #* 设置采样的概率, 越靠后的位置采样概率越大, 并且最小的10个距离索引不会采样
-        decay_factor = 0.05
-        probabilities = np.array([np.exp(decay_factor*unoccupied_indexs[i][1]) if unoccupied_indexs[i][1] > 0 else 0 for i in range(unoccupied_indexs.shape[0])])
+        #! 均匀采样
+        # decay_factor = 0.05
+        probabilities = np.array([1 for i in range(unoccupied_indexs.shape[0])])
         probabilities = probabilities/probabilities.sum()
         
         #* 采样可以放置的位置
-        sample_num = min(sample_num, len(unoccupied_indexs.nonzero()))
+        sample_num = min(sample_num, unoccupied_indexs.shape[0])
         indexs = np.random.choice(range(unoccupied_indexs.shape[0]), size=sample_num, replace=False, p=probabilities)
         choosen_indexs = unoccupied_indexs[indexs]
+        #* 按照从远到近排序
+        choosen_indexs = sorted(choosen_indexs, key=lambda x: x[1], reverse=True)
 
-        # objects = self.get_label_data()
-        # boxes_camera_3d_label_array = np.array([[*(obj.loc), obj.l, obj.h, obj.w, obj.ry] for obj in objects])
-        # label_boxes_2d = []
-        # for obj in objects:
-        #     if(obj.cls_type=='Car'):
-        #         label_boxes_2d.append(obj.box2d)
-            
-        # origin_calib = self.get_calib_data()
-        # boxes_lidar_3d_label_array = boxes3d_kitti_camera_to_lidar(boxes_camera_3d_label_array, origin_calib)
-        # origin_label_box_num = boxes_lidar_3d_label_array.shape[0]
-        
-        # #* 对选取的索引排序，越远的越先采样
-        # choosen_indexs = sorted(choosen_indexs, key=lambda x: x[1], reverse=True)
-        # database = self.get_database_data()
-        
-        # origin_image = self.get_image_data()
-        # origin_image = cv2.cvtColor(origin_image, cv2.COLOR_BGR2BGRA)
-        
-        added_boxes_coor = []
         database = self.db_infos[class_name]
         sampled_dict = []
         for angle_idx, range_idx in choosen_indexs:
             sampled_object = {}
-            # random_idx = random.randint(0, len(database[angle_idx][r_idx])-1)
-            # cur_filename = database[angle_idx][r_idx][random_idx]
             random_idx = random.randint(0, len(database[angle_idx][range_idx])-1)
             cur_filename = database[angle_idx][range_idx][random_idx]["image_path"]
             
@@ -1134,7 +1194,6 @@ class DataFusionSampler(object):
             
             #* 读取这个样本的标定文件
             calib_file = '../data/kitti/training/calib/' + frame_id + '.txt'
-            plane_file = '../data/kitti/training/planes/' + frame_id + '.txt'
             calib = self.get_calib_data(calib_file)
             
             added_object = added_labels[int(idx)]
@@ -1143,23 +1202,7 @@ class DataFusionSampler(object):
             #* 转到lidar坐标系
             added_object = box_utils.boxes3d_kitti_camera_to_lidar(added_object, calib)
             
-            # a, b, c, d = self.get_plane_data(plane_file)
-            # center_cam = calib.lidar_to_rect(added_object[:, 0:3])
-            # cur_height_cam = (-d - a * center_cam[:, 0] - c * center_cam[:, 2]) / b
-            # center_cam[:, 1] = cur_height_cam
-            # cur_lidar_height = calib.rect_to_lidar(center_cam)[:, 2]
-            # mv_height = added_object[:, 2] - added_object[:, 5] / 2 - cur_lidar_height
-            # added_object[:, 2] -= mv_height  # lidar view
-
-            #TODO 不放在扇形的中心        
-            # #* 将其平移到这个扇形的中心
-            # angle = (angle_idx+0.5)*angle_interval+start_angle
-            # r = (range_idx+0.5)*range_interval
-            # center_x = np.cos(np.deg2rad(angle)) * r
-            # center_y = np.sin(np.deg2rad(angle)) * r
             added_object = added_object[0]
-            # added_object[0] = center_y
-            # added_object[1] = -center_x
             sampled_object['box3d_lidar'] = added_object
             sampled_object['path'] = cur_filename
             sampled_object['num_points_in_gt'] = database[angle_idx][range_idx][random_idx]["num_points_in_gt"]
@@ -1186,37 +1229,46 @@ class DataFusionSampler(object):
         points = self.filter_lidar_points(points, calib, road_plane)  
               
         angle_limit = self.angle_limit
-        #* 64线激光雷达, 计算这个范围覆盖了多少angle
-        angle_num = int((angle_limit*2)/(360/64))
-        self.angle_num = angle_num
         
-        #* 距离分多少个
-        range_num = self.range_num
 
         #* 起始的角度和终止的角度
         start_angle, end_angle = 90-angle_limit, 90+angle_limit
 
         #* 计算每个角度区间大小
-        angle_interval = (end_angle-start_angle)/angle_num
+        angle_interval = self.angle_interval
         
         #* 计算每个距离区间的大小
-        range_interval = self.range_limit/range_num
+        range_interval = self.range_interval
         
         #* occupy数组, 默认都是0表示未占用, 大小为 angle_num * range_num
-        occupied = np.zeros((angle_num, range_num), dtype=np.bool_)
+        occupied = np.zeros((self.angle_num, self.range_num), dtype=np.uint8)
         for point in points:
             #* 计算距离lidar的距离, 并判断距离索引
             dis = np.sqrt(point[0] * point[0] + point[1] * point[1])
-            dis_idx = int(dis/range_interval)
-            if(dis_idx<0 or dis_idx>=range_num): continue
+            #* 计算距离索引
+            range_idx = int(dis/self.range_interval)
+            #* 超过所有就不考虑
+            if(range_idx < 0 or range_idx >= self.range_num): 
+                continue
             
             #* 计算角度值，并判断角度索引
             degree = np.arctan2(point[0], -point[1]) * 180 / np.pi
+            #! 会出现int(-0.5)=0的情况
+            if degree < self.start_angle:
+                continue
             #* angle_idx逆时针递增
-            angle_idx = int((degree-start_angle)/angle_interval)
-            if(angle_idx<0 or angle_idx>=angle_num): continue
-            
-            occupied[angle_idx][dis_idx] = True
+            angle_idx = int((degree-self.start_angle)/self.angle_interval)
+            if(angle_idx < 0 or angle_idx >= self.angle_num): 
+                continue
+            occupied[angle_idx][range_idx] = 1
+        
+        for angle_idx in range(self.angle_num):
+            vis_flag =False
+            for range_idx in range(self.range_num):
+                if(occupied[angle_idx][range_idx]):
+                    vis_flag = True
+                elif(vis_flag):
+                    occupied[angle_idx][range_idx] = 2
               
         existed_boxes = gt_boxes
         total_valid_sampled_dict = []
@@ -1229,21 +1281,20 @@ class DataFusionSampler(object):
                 num_gt = np.sum(class_name == gt_names)
                 sample_group['sample_num'] = str(int(self.sample_class_num[class_name]) - num_gt)
             if int(sample_group['sample_num']) > 0:
-                sampled_dict = self.sample_with_fixed_number(data_dict, class_name, points, occupied, angle_interval, start_angle, range_interval, int(sample_group['sample_num']))
-                # sampled_dict = self.sample_with_fixed_number(class_name, sample_group)
+                sampled_dict = self.sample_with_fixed_number(data_dict, class_name, points, occupied, angle_interval, start_angle, range_interval, int(self.sample_class_num[class_name]))
 
                 sampled_boxes = np.stack([x['box3d_lidar'] for x in sampled_dict], axis=0).astype(np.float32)
 
                 assert not self.sampler_cfg.get('DATABASE_WITH_FAKELIDAR', False), 'Please use latest codes to generate GT_DATABASE'
 
-                iou1 = iou3d_nms_utils.boxes_bev_iou_cpu(sampled_boxes[:, 0:7], existed_boxes[:, 0:7])
-                iou2 = iou3d_nms_utils.boxes_bev_iou_cpu(sampled_boxes[:, 0:7], sampled_boxes[:, 0:7])
-                iou2[range(sampled_boxes.shape[0]), range(sampled_boxes.shape[0])] = 0
-                iou1 = iou1 if iou1.shape[1] > 0 else iou2
-                valid_mask = ((iou1.max(axis=1) + iou2.max(axis=1)) == 0)
+                # iou1 = iou3d_nms_utils.boxes_bev_iou_cpu(sampled_boxes[:, 0:7], existed_boxes[:, 0:7])
+                # iou2 = iou3d_nms_utils.boxes_bev_iou_cpu(sampled_boxes[:, 0:7], sampled_boxes[:, 0:7])
+                # iou2[range(sampled_boxes.shape[0]), range(sampled_boxes.shape[0])] = 0
+                # iou1 = iou1 if iou1.shape[1] > 0 else iou2
+                # valid_mask = ((iou1.max(axis=1) + iou2.max(axis=1)) == 0)
 
                 if self.img_aug_type is not None:
-                    sampled_boxes2d, mv_height, valid_mask = self.sample_gt_boxes_2d(data_dict, sampled_boxes, valid_mask)
+                    sampled_boxes2d, mv_height, valid_mask = self.sample_gt_boxes_2d(data_dict, sampled_boxes, existed_boxes.copy())
                     sampled_gt_boxes2d.append(sampled_boxes2d)
                     if mv_height is not None:
                         sampled_mv_height.append(mv_height)
