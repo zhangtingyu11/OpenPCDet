@@ -263,6 +263,10 @@ class ClocsSECONDHead(AnchorHeadTemplate):
     def get_cls_layer_loss(self):
         #* 预测的分数, sigmoid前
         cls_preds = self.forward_ret_dict['cls_preds']
+        # clocs_ious = self.forward_ret_dict["clocs_ious"][0]
+        # #* 取iou大于0.5的
+        # valid_flag = clocs_ious[]
+        
         #* anchor的标签
         box_cls_labels = self.forward_ret_dict['box_cls_labels']
         #* 只关心标签大于等于0的, 大于0是正样本, =0是负样本

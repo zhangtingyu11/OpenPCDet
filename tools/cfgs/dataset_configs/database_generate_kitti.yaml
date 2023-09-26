@@ -7,10 +7,12 @@ SAM_MODEL_TYPE: "vit_h"
 SAM_WEIGHT_FILE: "./weights/sam_vit_h_4b8939.pth"
 
 #* 用来存储KITTI基本数据信息的文件
-DB_INFO_PATH: "./data/kitti/kitti_dbinfos_train.pkl"
+DB_INFO_PATH: "./data/kitti/image_database_train.pkl"
+
+OPENPCDET_INFO_PATH: "./data/kitti/kitti_dbinfos_train.pkl"
 
 #* 数据来源, 支持"SAM"和"KINS"
-DATA_SOURCE: "SAM"
+DATA_SOURCE: "KINS"
 
 #* KINS数据集标注文件的地址
 KINS_JSON_PATH: "/home/zty/Project/DeepLearning/Amodal-Instance-Segmentation-through-KINS-Dataset/instances_train.json"
@@ -51,7 +53,7 @@ INDIRECT_OCCUPIED_COLOR: 'b'
 FREE_SAPCE_COLOR: 'g'
 
 #* 选择的frame id
-CHOOSEN_FRAME_ID: '000004'
+CHOOSEN_FRAME_ID: '001259'
 
 #* IOF的阈值
 IOF_THRESH: 0.5

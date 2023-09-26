@@ -13,9 +13,11 @@ venv/
 *.pkl
 *.zip
 *.bin
+*.eps
 output
 version.py
 tools/image_data
 *.png
+tests
 
 

@@ -7,23 +7,20 @@ DATA_CONFIG:
         AUG_CONFIG_LIST:
             - NAME: fusion_gt_sampling
               USE_ROAD_PLANE: True
+              CFG_PATH: "./cfgs/dataset_configs/database_generate_kitti.yaml"
               DB_INFO_PATH:
                   - image_database_train.pkl
               PREPARE: {
-                  filter_by_min_points: ['Car:5', 'Pedestrian:5', 'Cyclist:5'],
+                  filter_by_min_points: ['Car:5'],
                   filter_by_difficulty: [-1],
               }
               IMG_AUG_TYPE: 'clocs'
-              ANGLE_LIMIT: 40.69
-              RANGE_LIMIT: 80
-              RANGE_NUM: 8
-              SAMPLE_GROUPS: ['Car:20','Pedestrian:15', 'Cyclist:15']
+              SAMPLE_GROUPS: ['Car:20']
               NUM_POINT_FEATURES: 4
               DATABASE_WITH_FAKELIDAR: False
               REMOVE_EXTRA_WIDTH: [0.0, 0.0, 0.0]
               LIMIT_WHOLE_SCENE: True
-    GET_ITEM_LIST: ["points", "mmcv_images", "images", "gt_boxes2d"]
-    # GET_ITEM_LIST: ["points", "results_2d"]
+    GET_ITEM_LIST: ["points", "images", "gt_boxes2d"]
 
     DATA_PROCESSOR:
     - NAME: mask_points_and_boxes_outside_range
@@ -67,8 +64,8 @@ MODEL:
         NUM_UPSAMPLE_FILTERS: [256, 256]
     DETECTOR_2D:
         NAME: MMDetCustomModel
-        IMAGE_DETECTOR_CONFIG_FILE: '/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/retinanet_r18_fpn_1x_coco/20230801_120418/vis_data/config.py'
-        IMAGE_DETECTOR_WEIGHTS_FILE: '/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/retinanet_r18_fpn_1x_coco/epoch_12.pth'
+        IMAGE_DETECTOR_CONFIG_FILE: '/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs/retinanet_r18_fpn_1x_coco/20230725_135144/vis_data/config.py'
+        IMAGE_DETECTOR_WEIGHTS_FILE: '/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs/retinanet_r18_fpn_1x_coco/epoch_12.pth'
     DENSE_HEAD:
         NAME: AnchorHeadSingle
         CLASS_AGNOSTIC: False
