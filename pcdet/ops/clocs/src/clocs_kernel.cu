@@ -39,7 +39,7 @@ __global__ void clocs_compute_iou_sparse_kernel(const int num_3d,
         if(ih > 0){
             float ua = ((*(box_3d+2) - *(box_3d+0)) * 
                         (*(box_3d+3) - *(box_3d+1)) + qbox_area - iw * ih);
-            cur_overlap[0] = (iw * ih /ua) * scores_2d[boxes2d_idx];
+            cur_overlap[0] = (iw * ih /ua);
             cur_overlap[1] = scores_3d[boxes3d_idx];
             cur_overlap[2] = scores_2d[boxes2d_idx];
             cur_overlap[3] = dis_to_lidar_3d[boxes3d_idx];
