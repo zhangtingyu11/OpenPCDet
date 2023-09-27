@@ -39,9 +39,9 @@ def kitti2coco(label_dir, img_dir, output_dir, suffix):
 
     # Add categories
     categories = [
-        {'id': 1, 'name': 'Car'},
-        {'id': 2, 'name': 'Pedestrian'},
-        {'id': 3, 'name': 'Cyclist'}
+        {'id': 0, 'name': 'Car'},
+        {'id': 1, 'name': 'Pedestrian'},
+        {'id': 2, 'name': 'Cyclist'}
     ]
     coco['categories'] = categories
 
@@ -69,7 +69,7 @@ def kitti2coco(label_dir, img_dir, output_dir, suffix):
                 lines = f.readlines()
                 for line in lines:
                     line = line.strip().split(' ')
-                    category_id = 1 if line[0] == 'Car' else 2 if line[0] == 'Pedestrian' else 3
+                    category_id = 0 if line[0] == 'Car' else 1 if line[0] == 'Pedestrian' else 2
                     bbox = [float(coord) for coord in line[4:8]]
 
                     x1, y1, x2, y2 = bbox
@@ -117,11 +117,11 @@ if __name__ == "__main__":
             with open(item, 'r') as r_tdf:
                 for each_line in r_tdf:
                     labeldata = each_line.strip().split(' ')
-                    if labeldata[0] in ['Truck','Van','Tram']: # 合并汽车类
-                        labeldata[0] = labeldata[0].replace(labeldata[0],'Car')
-                    if labeldata[0] == 'Person_sitting': # 合并行人类
-                        labeldata[0] = labeldata[0].replace(labeldata[0],'Pedestrian')
-                    if labeldata[0] in ['DontCare', 'Misc']: # 忽略Dontcare类
+                    # if labeldata[0] in ['Truck','Van','Tram']: # 合并汽车类
+                        # labeldata[0] = labeldata[0].replace(labeldata[0],'Car')
+                    # if labeldata[0] == 'Person_sitting': # 合并行人类
+                        # labeldata[0] = labeldata[0].replace(labeldata[0],'Pedestrian')
+                    if labeldata[0] in ['DontCare', 'Misc', 'Truck','Van','Tram', 'Person_sitting']: # 忽略Dontcare类
                         continue
                     # if labeldata[0] == 'Misc': # 忽略Misc类
                     #     continue
