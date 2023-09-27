@@ -3,7 +3,7 @@ import requests
 from mmengine.config import Config
 import os
 import os.path as osp
-START = "conditional_detr"
+START = "retinanet"
 
 def find_and_modify_key(dictionary, target_key, new_value):
     """修改字典中的某个key为一个值
@@ -18,13 +18,16 @@ def find_and_modify_key(dictionary, target_key, new_value):
             dictionary[key] = new_value
         elif isinstance(value, dict):
             find_and_modify_key(value, target_key, new_value)
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict):
+                    find_and_modify_key(item, target_key, new_value)
             
-def get_key(dictionary, target_key):
-    for key, value in dictionary.items():
-        if key == target_key:
-            return dictionary[key]
-        elif isinstance(value, dict):
-            return get_key(value, target_key)
+def get_batch_size(dictionary):
+    return dictionary['train_dataloader']['batch_size']
+
+def get_lr(dictionary):
+    return dictionary["optim_wrapper"]["optimizer"]["lr"]
 
 def modify_classes(dictionary, classes_value):
     for key, value in dictionary.items():
@@ -58,7 +61,8 @@ start_flag = False
 for model_url in detection_col_ul.findAll("li"):
     href = model_url.find("a")
     link_url = href['href']
-    if not start_flag and START not in link_url:
+    if START not in link_url:
+    # if not start_flag and START not in link_url:
         continue
     else:
         start_flag = True
@@ -97,8 +101,11 @@ for model_url in detection_col_ul.findAll("li"):
             find_and_modify_key(cfg, "num_classes", 1)
             modify_classes(cfg, ('Car'))
             find_and_modify_key(cfg, "load_from", weight_file)
-            batch_size = 16
+            batch_size = get_batch_size(cfg)
+            batch_size*=8   #* 模拟8卡
+            find_and_modify_key(cfg, "base_batch_size", batch_size)
             find_and_modify_key(cfg, "batch_size", batch_size)
+            lr = get_lr(cfg)
             dump_filename = 'tools/image_data/'+config_file
             sp = dump_filename.split('/')
             dump_dir = '/'.join(sp[:-1])
@@ -111,8 +118,11 @@ for model_url in detection_col_ul.findAll("li"):
                 if return_code==0:
                     break
                 print("以batch_size{}训练{}失败".format(batch_size, config_file))
-                batch_size//=2                
+                batch_size//=2    
+                lr/=2  
+                find_and_modify_key(cfg, "base_batch_size", batch_size)
                 find_and_modify_key(cfg, "batch_size", batch_size)
+                find_and_modify_key(cfg, "lr", lr)
                 dump_filename = 'tools/image_data/'+config_file
                 sp = dump_filename.split('/')
                 dump_dir = '/'.join(sp[:-1])
