@@ -1,7 +1,7 @@
 from .detector3d_template import Detector3DTemplate
-from ..fusion_heads import clocs_second_head, clocs_sparse_contra_head, clocs_dense_head, clocs_voxelrcnn_head
+from ..fusion_heads import clocs_second_contra_head, clocs_second_head, clocs_dense_head, clocs_voxelrcnn_head
 
-fusion_heads = [clocs_second_head.ClocsSECONDHead, clocs_voxelrcnn_head.ClocsVoxelRCNNHead, clocs_sparse_contra_head.ClocsSparseContraHead,
+fusion_heads = [clocs_second_head.ClocsSECONDHead, clocs_voxelrcnn_head.ClocsVoxelRCNNHead, clocs_second_contra_head.ClocsSecondContraHead,
                 clocs_dense_head.ClocsDenseHead]
 class ClocsNet(Detector3DTemplate):
     def __init__(self, model_cfg, num_class, dataset):
