@@ -33,6 +33,8 @@
                 "cfgs/kitti_models/second_car_clocs.yaml",
                 "--pretrained_model",
                 "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth",
+                "--fix_random_seed",
+                "6811"
             ]
         },
         {
@@ -68,7 +70,7 @@
             ]
         },
         {
-            "name": "Train second clocs fusion aug",
+            "name": "Train second clocs contra fusion aug",
             "type": "python",
             "request": "launch",
             "cwd": "${workspaceFolder}/tools",
@@ -81,7 +83,7 @@
             },
             "args": [
                 "--cfg_file",
-                "cfgs/kitti_models/second_car_clocs_fusion_aug.yaml",
+                "cfgs/kitti_models/second_car_clocs_contra_fusion_aug.yaml",
                 "--pretrained_model",
                 "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth",
             ]
@@ -94,10 +96,6 @@
             "program": "train.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "env": {
-                "LD_LIBRARY_PATH": "$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
-                "CUDA_VISIBLE_DEVICES": "1",
-            },
             "args": [
                 "--cfg_file",
                 "cfgs/kitti_models/second_car_clocs_contra.yaml",
@@ -171,6 +169,51 @@
             "request": "launch",
             "cwd": "${workspaceFolder}",
             "program": "tools/search_valid_space.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+        },
+        {
+            "name": "Statistic",
+            "type": "python",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/tools",
+            "program": "statistics.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+        },
+        {
+            "name": "kitti2coco",
+            "type": "python",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "program": "tools/kitti2coco.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+        },
+        {
+            "name": "auto_train_mmdet",
+            "type": "python",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "program": "tools/train_clocs.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+        },
+        {
+            "name": "auto_train_mmdet_nuscenes",
+            "type": "python",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "program": "tools/train_clocs_nuscenes.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+        },
+        {
+            "name": "choose_best_coco",
+            "type": "python",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/mmdetection/tools",
+            "program": "choose_best.py",
             "console": "integratedTerminal",
             "justMyCode": true,
         },

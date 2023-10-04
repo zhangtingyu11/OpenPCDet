@@ -3,7 +3,7 @@ import requests
 from mmengine.config import Config
 import os
 import os.path as osp
-START = "cascade_rcnn"
+START = "retinanet"
 
 def find_and_modify_key(dictionary, target_key, new_value):
     """修改字典中的某个key为一个值
@@ -22,7 +22,24 @@ def find_and_modify_key(dictionary, target_key, new_value):
             for item in value:
                 if isinstance(item, dict):
                     find_and_modify_key(item, target_key, new_value)
-            
+
+def modify_nuscenes(dictionary):
+    dictionary.data_root = 'data/nuImages'
+    dictionary.train_dataloader.dataset.data_root = dictionary.data_root
+    dictionary.train_dataloader.dataset.ann_file = 'annotations/nuimages_v1.0-train.json'
+    dictionary.train_dataloader.dataset.data_prefix.img = './'
+    
+    dictionary.val_dataloader.dataset.data_root = dictionary.data_root
+    dictionary.val_dataloader.dataset.ann_file = 'annotations/nuimages_v1.0-val.json'
+    dictionary.val_dataloader.dataset.data_prefix.img = './'
+    
+    dictionary.test_dataloader.dataset.data_root = dictionary.data_root
+    dictionary.test_dataloader.dataset.ann_file = 'annotations/nuimages_v1.0-val.json'
+    dictionary.test_dataloader.dataset.data_prefix.img = './'
+    
+    dictionary.val_evaluator.ann_file = 'data/nuImages/annotations/nuimages_v1.0-val.json'
+    dictionary.test_evaluator.ann_file = 'data/nuImages/annotations/nuimages_v1.0-val.json'
+    
 def get_batch_size(dictionary):
     return dictionary['train_dataloader']['batch_size']
 
@@ -91,6 +108,9 @@ for model_url in detection_col_ul.findAll("li"):
                     weight_file = href["href"][2:-2]
             if(config_file is None or weight_file is None):
                 continue
+            config_file = config_file.split('/')
+            config_file[1] = 'retinanet_nuscenes'
+            config_file = '/'.join(config_file)
             if not os.path.exists("mmdetection/"+config_file):
                 continue
             cfg = Config.fromfile("mmdetection/"+config_file)
@@ -98,8 +118,11 @@ for model_url in detection_col_ul.findAll("li"):
             #! 修改类别
             # find_and_modify_key(cfg, "num_classes", 3)
             # modify_classes(cfg, ('Car', 'Pedestrian', 'Cyclist'))
-            find_and_modify_key(cfg, "num_classes", 1)
-            modify_classes(cfg, ('Car'))
+            modify_nuscenes(cfg)
+            find_and_modify_key(cfg, "num_classes", 10)
+            modify_classes(cfg, ('car', 'truck', 'trailer', 'bus', 'construction_vehicle',
+                  'bicycle', 'motorcycle', 'pedestrian', 'traffic_cone',
+                  'barrier'))
             find_and_modify_key(cfg, "load_from", weight_file)
             batch_size = get_batch_size(cfg)
             batch_size*=8   #* 模拟8卡
@@ -114,7 +137,7 @@ for model_url in detection_col_ul.findAll("li"):
             return_code = 1
             while(return_code !=0 and batch_size!=0):
                 return_code = os.system('cd mmdetection; python tools/train.py ../tools/image_data/'+config_file + \
-                    " --work-dir " + "work_dirs_single_class/" + osp.splitext(osp.basename(config_file))[0])
+                    " --work-dir " + "work_dirs_nuImages/" + osp.splitext(osp.basename(config_file))[0])
                 if return_code==0:
                     break
                 print("以batch_size{}训练{}失败".format(batch_size, config_file))

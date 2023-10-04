@@ -109,6 +109,7 @@ class ClocsVoxelRCNNHead(nn.Module):
         return fusion_loss, tb_dict
     
     def get_box_cls_layer_loss(self, forward_ret_dict):
+        #TODO 换成focal loss
         loss_cfgs = self.model_cfg.LOSS_CONFIG
         rcnn_cls = forward_ret_dict['rcnn_cls']
         rcnn_cls_labels = forward_ret_dict['rcnn_cls_labels'].view(-1)
@@ -116,7 +117,8 @@ class ClocsVoxelRCNNHead(nn.Module):
             rcnn_cls_flat = rcnn_cls.view(-1)
             batch_loss_cls = F.binary_cross_entropy(torch.sigmoid(rcnn_cls_flat), rcnn_cls_labels.float(), reduction='none')
             cls_valid_mask = (rcnn_cls_labels >= 0).float()
-            rcnn_loss_cls = (batch_loss_cls * cls_valid_mask).sum() / torch.clamp(cls_valid_mask.sum(), min=1.0)
+            cls_positive_mask = (rcnn_cls_labels > 0).float()
+            rcnn_loss_cls = (batch_loss_cls * cls_valid_mask).sum() / torch.clamp(cls_positive_mask.sum(), min=1.0)
         elif loss_cfgs.CLS_LOSS == 'CrossEntropy':
             batch_loss_cls = F.cross_entropy(rcnn_cls, rcnn_cls_labels, reduction='none', ignore_index=-1)
             cls_valid_mask = (rcnn_cls_labels >= 0).float()

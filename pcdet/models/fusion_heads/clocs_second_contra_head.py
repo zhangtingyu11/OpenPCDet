@@ -153,7 +153,7 @@ class SigmoidFocalClassificationLoss(Loss):
     focal_cross_entropy_loss = (modulating_factor * alpha_weight_factor*per_entry_cross_ent)
     return focal_cross_entropy_loss * weights
 
-class ClocsSECONDHead(AnchorHeadTemplate):
+class ClocsSecondContraHead(AnchorHeadTemplate):
     def __init__(self, model_cfg, input_channels, num_class, class_names, grid_size, point_cloud_range,
                  predict_boxes_when_training=True, **kwargs):
         super().__init__(
@@ -174,6 +174,7 @@ class ClocsSECONDHead(AnchorHeadTemplate):
         #* 因为希望最后的结果不是全部大于0的, 所以没有加ReLU
         self.fuse.append(nn.Conv2d(num_filters[-2], num_filters[-1], 1))
         self.fuse = nn.Sequential(*self.fuse)
+
         if self.model_cfg.USE_CONTRA:
           #* 图像特征的提取器
           self.image_extractor = []
@@ -236,19 +237,17 @@ class ClocsSECONDHead(AnchorHeadTemplate):
         if self.model_cfg.USE_CONTRA:
           lidar_feature_expanded_list = []
           image_feature_expanded_list = []
-        for box_2d_preds, box_2d_detector, scores_3d, dist_to_lidar_single, image_shape, lidar_pred in zip(box_preds_on_image, 
+        for box_2d_preds, box_2d_detector, scores_3d, dist_to_lidar_single in zip(box_preds_on_image, 
                                                                                     boxes2d_by_detector,
                                                                                     pred_3d_scores,
-                                                                                    dis_to_lidar,
-                                                                                    data_dict["image_shape"], 
-                                                                                    preds):
+                                                                                    dis_to_lidar):
             scores_2d = box_2d_detector[:, 4:5]
-            box_2d_pos = box_2d_detector[:, :4]
+            box_2d_detector = box_2d_detector[:, :4]
             boxes_3d_num = box_2d_preds.shape[0]
             overlap = torch.zeros((boxes_3d_num, boxes_2d_num, 4), dtype = box_2d_detector.dtype, device = box_2d_detector.device)-1
             #* 用[iou, 3D目标检测分数, 2D目标检测分数, 到LiDAR的距离来填充]
             ious = compute_clocs_iou_sparse(box_2d_preds.contiguous(),
-                                    box_2d_pos.contiguous(),
+                                    box_2d_detector.contiguous(),
                                     scores_3d,
                                     scores_2d.contiguous(),
                                     dist_to_lidar_single,
@@ -261,18 +260,8 @@ class ClocsSECONDHead(AnchorHeadTemplate):
             self.forward_ret_dict['3d_max_confidence'] = max_confidences
             input_features = ious
             if self.model_cfg.USE_CONTRA:
-              image_height, image_width = image_shape
-              box_2d_detector_normalized = box_2d_detector.clone()
-              box_2d_detector_normalized[:, 0]/=image_width
-              box_2d_detector_normalized[:, 2]/=image_width
-              box_2d_detector_normalized[:, 1]/=image_height
-              box_2d_detector_normalized[:, 3]/=image_height
-              lidar_pred_normalized = lidar_pred.clone()
-              lidar_pred_normalized[:, 0]/=70.4
-              lidar_pred_normalized[:, 1]/=80
-              lidar_pred_normalized[:, 2]/=4
-              lidar_data = torch.cat([lidar_pred_normalized, scores_3d], dim=-1).permute(0, 1).reshape(1, -1, preds.shape[1], 1)
-              image_data = box_2d_detector_normalized.permute(0, 1).reshape(1, -1, 1, boxes2d_by_detector.shape[1])
+              lidar_data = torch.cat([preds[0], scores_3d], dim=-1).permute(0, 1).reshape(1, -1, preds.shape[1], 1)
+              image_data = boxes2d_by_detector[0].permute(0, 1).reshape(1, -1, 1, boxes2d_by_detector.shape[1])
               lidar_features = self.lidar_extractor(lidar_data).squeeze(0)
               image_features = self.image_extractor(image_data).squeeze(0)
               lidar_features = lidar_features.squeeze().transpose(0, 1).unsqueeze(1)
@@ -300,32 +289,19 @@ class ClocsSECONDHead(AnchorHeadTemplate):
           #* iou大于阈值的位置
           iou_mask = ious[:, 0:1, :, :] > self.model_cfg.CONTRA_MATCH_IOU
 
-          # #* 根据置信度找到每行最大值的索引
-          # iou = ious[0, 0, :, :]
-          # max_iou_indices3d = torch.argmax(iou, dim=1)
+          #* 根据置信度找到每行最大值的索引
+          iou = ious[0, 0, :, :]
+          max_iou_indices3d = torch.argmax(iou, dim=1)
           
-          # lidar_label3d = torch.zeros(boxes_3d_num, boxes_2d_num, dtype=torch.bool)
+          lidar_label3d = torch.zeros(boxes_3d_num, boxes_2d_num, dtype=torch.bool)
 
-          # #* 将每行中IOU大于阈值且置信度最大的位置置为1
-          # row_indices3d = torch.arange(boxes_3d_num)
-          # lidar_label3d[row_indices3d, max_iou_indices3d] = True
-          # lidar_label3d = lidar_label3d.view(1, 1, boxes_3d_num, boxes_2d_num)
-          self.forward_ret_dict['contrastive_label'] = iou_mask
+          #* 将每行中IOU大于阈值且置信度最大的位置置为1
+          row_indices3d = torch.arange(boxes_3d_num)
+          lidar_label3d[row_indices3d, max_iou_indices3d] = True
+          lidar_label3d = lidar_label3d.view(1, 1, boxes_3d_num, boxes_2d_num)
+          self.forward_ret_dict['contrastive_label'] = lidar_label3d.cuda() & iou_mask
 
         self.forward_ret_dict['cls_preds'] = cls_preds
-        gt_boxes = data_dict['gt_boxes'].detach().cpu().numpy()
-        gt_boxes_classes = np.expand_dims(gt_boxes[:, :, -1], axis=-1)
-        gt_boxes_in_camera = np.expand_dims(boxes3d_lidar_to_kitti_camera(gt_boxes[0], data_dict['calib'][0]), axis=0)
-        gt_boxes_in_camera = np.concatenate([gt_boxes_in_camera, gt_boxes_classes], axis=-1)
-        #* 在相机坐标系下的预测框
-        preds_in_camera = np.expand_dims(boxes3d_lidar_to_kitti_camera(preds[0].detach().cpu().numpy(), data_dict['calib'][0]), axis=0)
-
-        if self.training:
-            targets_dict = self.assign_targets(
-                preds=preds_in_camera,
-                gt_boxes=gt_boxes_in_camera
-            )
-            self.forward_ret_dict.update(targets_dict)
             
         if not self.training or self.predict_boxes_when_training:
             data_dict['batch_cls_preds'] = cls_preds
@@ -357,29 +333,28 @@ class ClocsSECONDHead(AnchorHeadTemplate):
     def get_cls_layer_loss(self):
         #* clocs预测的分数, sigmoid前
         cls_preds = self.forward_ret_dict['cls_preds']
-        if self.model_cfg.USE_LA:
-          #* 每个3D物体和与其IOU大于阈值的2D物体的最大2D置信度
-          max3d_confidence = self.forward_ret_dict['3d_max_confidence']
-          #* 3D目标检测器的分数取出来求sigmoid
-          sig_preds = (torch.sigmoid(self.forward_ret_dict['preds_3d'])).view(1, -1)
-          #* clocs预测的负样本
-          clocs_neg = (max3d_confidence<self.model_cfg.CLOCS_NEG_IOU_THRESH).view(1, -1)
-          #* 3D目标检测器预测出来的负样本
-          neg3d = sig_preds<self.model_cfg.CLOCS_NEG_IOU_THRESH
-          box_cls_labels = self.forward_ret_dict['box_cls_labels']
-          #* 标签中的正样本
-          positives = box_cls_labels > 0
-          #* 如果两个都很低， 但是标签是正样本， 说明这个要变成-1
-          box_cls_labels[clocs_neg & neg3d & positives]=-1
-          
-          #* 3D目标检测器预测出来的正样本
-          pos3d = sig_preds>self.model_cfg.CLOCS_POS_IOU_THRESH
-          #* clocs预测出来的正样本
-          clocs_pos = (max3d_confidence>self.model_cfg.CLOCS_POS_IOU_THRESH).view(1, -1)
-          #* 标签中的负样本
-          negatives = box_cls_labels==0
-          #* 如果预测出来都觉得是正样本， 但是其实是负样本， 也要设置成-1
-          box_cls_labels[pos3d & clocs_pos & negatives]=-1
+        #* 每个3D物体和与其IOU大于阈值的2D物体的最大2D置信度
+        max3d_confidence = self.forward_ret_dict['3d_max_confidence']
+        #* 3D目标检测器的分数取出来求sigmoid
+        sig_preds = (torch.sigmoid(self.forward_ret_dict['preds_3d'])).view(1, -1)
+        #* clocs预测的负样本
+        clocs_neg = (max3d_confidence<self.model_cfg.CLOCS_NEG_IOU_THRESH).view(1, -1)
+        #* 3D目标检测器预测出来的负样本
+        neg3d = sig_preds<self.model_cfg.CLOCS_NEG_IOU_THRESH
+        box_cls_labels = self.forward_ret_dict['box_cls_labels']
+        #* 标签中的正样本
+        positives = box_cls_labels > 0
+        #* 如果两个都很低， 但是标签是正样本， 说明这个要变成-1
+        box_cls_labels[clocs_neg & neg3d & positives]=-1
+        
+        #* 3D目标检测器预测出来的正样本
+        pos3d = sig_preds>self.model_cfg.CLOCS_POS_IOU_THRESH
+        #* clocs预测出来的正样本
+        clocs_pos = (max3d_confidence>self.model_cfg.CLOCS_POS_IOU_THRESH).view(1, -1)
+        #* 标签中的负样本
+        negatives = box_cls_labels==0
+        #* 如果预测出来都觉得是正样本， 但是其实是负样本， 也要设置成-1
+        box_cls_labels[pos3d & clocs_pos & negatives]=-1
         
         #* 只关心标签大于等于0的, 大于0是正样本, =0是负样本
         cared = box_cls_labels >= 0  # [N, num_anchors]

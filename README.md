@@ -106,3 +106,10 @@ ln -s ../data data
 #在OpenPCDet主目录下
 python -m pcdet.datasets.kitti.kitti_dataset create_kitti_infos tools/cfgs/dataset_configs/kitti_dataset.yaml
 ```
+
+8. 用mmdetection训练nuImages
+下载nuImages数据集
+借助mmdetection3d中的脚本生成coco数据
+```python
+python -u tools/dataset_converters/nuimage_converter.py --data-root data/nuImages --version v1.0-train v1.0-val v1.0-mini --out-dir data/nuImages/coco
+``````
