@@ -356,6 +356,7 @@ class ClocsSECONDHead(AnchorHeadTemplate):
 
     def get_cls_layer_loss(self):
         #* clocs预测的分数, sigmoid前
+        box_cls_labels = self.forward_ret_dict['box_cls_labels']
         cls_preds = self.forward_ret_dict['cls_preds']
         if self.model_cfg.USE_LA:
           #* 每个3D物体和与其IOU大于阈值的2D物体的最大2D置信度
@@ -366,7 +367,6 @@ class ClocsSECONDHead(AnchorHeadTemplate):
           clocs_neg = (max3d_confidence<self.model_cfg.CLOCS_NEG_IOU_THRESH).view(1, -1)
           #* 3D目标检测器预测出来的负样本
           neg3d = sig_preds<self.model_cfg.CLOCS_NEG_IOU_THRESH
-          box_cls_labels = self.forward_ret_dict['box_cls_labels']
           #* 标签中的正样本
           positives = box_cls_labels > 0
           #* 如果两个都很低， 但是标签是正样本， 说明这个要变成-1
