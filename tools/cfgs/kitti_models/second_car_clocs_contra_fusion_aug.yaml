@@ -63,11 +63,11 @@ MODEL:
         NUM_UPSAMPLE_FILTERS: [256, 256]
     DETECTOR_2D:
         NAME: MMDetCustomModel
-        IMAGE_DETECTOR_CONFIG_FILE: /home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/retinanet_r18_fpn_1x_coco/20230927_150345/vis_data/config.py
-        IMAGE_DETECTOR_WEIGHTS_FILE: /home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/retinanet_r18_fpn_1x_coco/epoch_9.pth
+        IMAGE_DETECTOR_CONFIG_FILE: /home/public/zty/Project/DeepLearningProject/OpenPCDet/mmdetection/work_dirs_single_class/retinanet_r18_fpn_1x_coco/20230927_150345/vis_data/config.py
+        IMAGE_DETECTOR_WEIGHTS_FILE: /home/public/zty/Project/DeepLearningProject/OpenPCDet/mmdetection/work_dirs_single_class/retinanet_r18_fpn_1x_coco/epoch_9.pth
         USE_GT: True
-        VAL_ACTIVATED: True
-        PROPOTION: 0.5
+        VAL_ACTIVATED: False
+        PROPOTION: 1.0
         LOWER_SCORE: 0.6
         HIGHER_SCORE: 1.0
     DENSE_HEAD:
