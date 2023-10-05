@@ -67,7 +67,7 @@ MODEL:
         IMAGE_DETECTOR_WEIGHTS_FILE: /home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/retinanet_r18_fpn_1x_coco/epoch_9.pth
         USE_GT: True
         VAL_ACTIVATED: True
-        PROPOTION: 1.0
+        PROPOTION: 0.5
         LOWER_SCORE: 0.6
         HIGHER_SCORE: 1.0
     DENSE_HEAD:
