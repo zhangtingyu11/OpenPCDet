@@ -153,6 +153,31 @@ class SigmoidFocalClassificationLoss(Loss):
     focal_cross_entropy_loss = (modulating_factor * alpha_weight_factor*per_entry_cross_ent)
     return focal_cross_entropy_loss * weights
 
+class ResnetBlock(nn.Module):
+  def __init__(self, in_planes, out_planes):
+    super(ResnetBlock, self).__init__()
+    self.in_planes = in_planes
+    self.out_planes = out_planes
+    self.main_conv1 = nn.Conv2d(in_planes, out_planes, 1)
+    self.bn1 = nn.BatchNorm2d(out_planes)
+    self.relu1 = nn.ReLU(inplace=True)
+    self.main_conv2 = nn.Conv2d(out_planes, out_planes, 1)
+    self.bn2 = nn.BatchNorm2d(out_planes)
+    self.relu2 = nn.ReLU(inplace=True)
+    if(in_planes != out_planes):
+      self.side_conv = nn.Conv2d(in_planes, out_planes, 1)
+      self.side_bn = nn.BatchNorm2d(out_planes)
+    self.relu3 = nn.ReLU(inplace=True)
+  def forward(self, x):
+    out = self.relu1(self.bn1(self.main_conv1(x)))
+    out = self.bn2(self.main_conv2(out))
+    if(self.in_planes == self.out_planes):
+      ind_x = x
+    else:
+      ind_x = self.side_bn(self.side_conv(x))
+    return self.relu3(ind_x+out)
+    
+
 class ClocsSECONDHead(AnchorHeadTemplate):
     def __init__(self, model_cfg, input_channels, num_class, class_names, grid_size, point_cloud_range,
                  predict_boxes_when_training=True, **kwargs):
@@ -168,8 +193,11 @@ class ClocsSECONDHead(AnchorHeadTemplate):
         
         self.fuse = []
         for i in range(1, len(num_filters)-1):
-            self.fuse.append(nn.Conv2d(num_filters[i-1], num_filters[i], 1))
-            self.fuse.append(nn.ReLU())
+            if self.model_cfg.get("USE_RES_BLOCK", False):
+              self.fuse.append(nn.Conv2d(num_filters[i-1], num_filters[i], 1))
+              self.fuse.append(nn.ReLU())
+            else:
+              self.fuse.append(ResnetBlock(num_filters[i-1], num_filters[i]))
             
         #* 因为希望最后的结果不是全部大于0的, 所以没有加ReLU
         self.fuse.append(nn.Conv2d(num_filters[-2], num_filters[-1], 1))
@@ -194,14 +222,6 @@ class ClocsSECONDHead(AnchorHeadTemplate):
               self.lidar_extractor.append(nn.ReLU())
           self.lidar_extractor.append(nn.Conv2d(lidar_num_filters[-2], lidar_num_filters[-1], 1))
           self.lidar_extractor = nn.Sequential(*self.lidar_extractor)
-          
-          #* 温度系数
-          self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07)).exp()
-
-    def get_logits(self, image_features, lidar_features):
-        logits_per_image = self.logit_scale * image_features @ lidar_features.T
-        logits_per_lidar = self.logit_scale * lidar_features @ image_features.T
-        return logits_per_image, logits_per_lidar
 
     def forward(self, data_dict):
         #* 读取3D目标检测的结果
@@ -247,6 +267,8 @@ class ClocsSECONDHead(AnchorHeadTemplate):
             boxes_3d_num = box_2d_preds.shape[0]
             overlap = torch.zeros((boxes_3d_num, boxes_2d_num, 4), dtype = box_2d_detector.dtype, device = box_2d_detector.device)-1
             #* 用[iou, 3D目标检测分数, 2D目标检测分数, 到LiDAR的距离来填充]
+            # TODO 修改标记(不用-10)
+            # TODO 增加一个flag表示这个物体没有匹配的3D物体
             ious = compute_clocs_iou_sparse(box_2d_preds.contiguous(),
                                     box_2d_pos.contiguous(),
                                     scores_3d,
@@ -255,6 +277,8 @@ class ClocsSECONDHead(AnchorHeadTemplate):
                                     overlap)
 
             ious = ious.permute(2, 0, 1).view(1, 4, boxes_3d_num, boxes_2d_num)
+            non_empty_mask = (ious[0, 0, :, :]!=-10).nonzero()
+            
             iou_condition = ious[0][0, :, :] > self.model_cfg.IOU_THRESH
             #* 找到每个3D物体中满足条件的2D物体的最大置信度
             max_confidences, _ = torch.max(torch.where(iou_condition, ious[0, 2, :, :], torch.zeros_like(ious[0, 2, :, :])), dim=1)
@@ -286,7 +310,10 @@ class ClocsSECONDHead(AnchorHeadTemplate):
               image_feature_expanded_list.append(image_feature_expanded.view(1, *image_feature_expanded.shape))
               sim_feature = F.cosine_similarity(lidar_feature_expanded, image_feature_expanded, -1)[None, None, :, :]
               input_features = torch.cat([input_features, sim_feature], dim=1)
-            res = self.fuse(input_features)
+            non_empty_input_features = (input_features[:, :, non_empty_mask[:, 0], non_empty_mask[:, 1]]).unsqueeze(2)
+            new_res = self.fuse(non_empty_input_features)
+            res = torch.zeros((1, 1, boxes_3d_num, boxes_2d_num)).type(torch.float32).cuda()-100
+            res[:, :, non_empty_mask[:, 0], non_empty_mask[:, 1]] = new_res.squeeze(2)
 
             #* 相当于maxpooling
             output = torch.amax(res, dim = -1)
@@ -313,14 +340,14 @@ class ClocsSECONDHead(AnchorHeadTemplate):
           self.forward_ret_dict['contrastive_label'] = iou_mask
 
         self.forward_ret_dict['cls_preds'] = cls_preds
-        gt_boxes = data_dict['gt_boxes'].detach().cpu().numpy()
-        gt_boxes_classes = np.expand_dims(gt_boxes[:, :, -1], axis=-1)
-        gt_boxes_in_camera = np.expand_dims(boxes3d_lidar_to_kitti_camera(gt_boxes[0], data_dict['calib'][0]), axis=0)
-        gt_boxes_in_camera = np.concatenate([gt_boxes_in_camera, gt_boxes_classes], axis=-1)
-        #* 在相机坐标系下的预测框
-        preds_in_camera = np.expand_dims(boxes3d_lidar_to_kitti_camera(preds[0].detach().cpu().numpy(), data_dict['calib'][0]), axis=0)
 
         if self.training:
+            gt_boxes = data_dict['gt_boxes'].detach().cpu().numpy()
+            gt_boxes_classes = np.expand_dims(gt_boxes[:, :, -1], axis=-1)
+            gt_boxes_in_camera = np.expand_dims(boxes3d_lidar_to_kitti_camera(gt_boxes[0], data_dict['calib'][0]), axis=0)
+            gt_boxes_in_camera = np.concatenate([gt_boxes_in_camera, gt_boxes_classes], axis=-1)
+            #* 在相机坐标系下的预测框
+            preds_in_camera = np.expand_dims(boxes3d_lidar_to_kitti_camera(preds[0].detach().cpu().numpy(), data_dict['calib'][0]), axis=0)
             targets_dict = self.assign_targets(
                 preds=preds_in_camera,
                 gt_boxes=gt_boxes_in_camera
