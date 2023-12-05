@@ -8,6 +8,7 @@ from math import *
 class MMDetCustomModel(nn.Module):
     def __init__(self, model_cfg):
         super().__init__()
+        self.model_cfg = model_cfg
         image_detector_config_file = model_cfg.IMAGE_DETECTOR_CONFIG_FILE
         image_detector_weight_file = model_cfg.IMAGE_DETECTOR_WEIGHTS_FILE
         self.use_gt = model_cfg.get("USE_GT", False)
