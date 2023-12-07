@@ -3,6 +3,11 @@ from mmdet.apis import init_detector, inference_detector
 import torch
 import numpy as np
 from math import *
+from mmdeploy.apis.utils import build_task_processor
+from mmdeploy.utils import get_input_shape, load_config
+import time
+def get_millisecond():
+    return int(time.time() * 1000)
 
 
 class MMDetCustomModel(nn.Module):
@@ -17,7 +22,22 @@ class MMDetCustomModel(nn.Module):
             self.lower_score = model_cfg.LOWER_SCORE
             self.higher_score = model_cfg.HIGHER_SCORE
             self.propotion = model_cfg.PROPOTION
-        self.image_model = init_detector(image_detector_config_file, image_detector_weight_file, device='cuda:0')
+        deploy_cfg = model_cfg.get("DEPLOY_CFG", None)
+        if deploy_cfg is not None:
+            self.speed_up = True
+            detector_2d_cfg = model_cfg.IMAGE_DETECTOR_CONFIG_FILE
+            device = 'cuda'
+            backend_model = model_cfg.BACKEND_MODEL
+            deploy_cfg, detector_2d_cfg = load_config(deploy_cfg, detector_2d_cfg)
+            self.task_processor = build_task_processor(detector_2d_cfg, deploy_cfg, device)
+            self.model = self.task_processor.build_backend_model(backend_model)
+            self.input_shape = get_input_shape(deploy_cfg)
+        else:
+            self.image_model = init_detector(image_detector_config_file, image_detector_weight_file, device='cuda:0')
+            self.speed_up = False
+        # self.total_time = 0
+        # self.total_cnt = 0
+        
         
     def forward(self, data_dict):
         #* 图像
@@ -39,7 +59,18 @@ class MMDetCustomModel(nn.Module):
                 gt_boxes2d = torch.cat([gt_boxes2d, gt_boxes2d_scores], dim=-1)
         images_results = []
         for image in images:
-            image_result = inference_detector(self.image_model, image)
+            if self.speed_up:
+                # start_time = get_millisecond()
+                model_inputs, _ = self.task_processor.create_input(image, self.input_shape)
+                with torch.no_grad():
+                    image_result = self.model.test_step(model_inputs)[0]
+                # end_time = get_millisecond()
+                # self.total_time += end_time-start_time
+                # self.total_cnt+=1
+                # print("inner detector2d inference time: {}".format(end_time-start_time))
+            else:
+                image_result = inference_detector(self.image_model, image)
+
             image_result_bboxes = image_result.pred_instances.bboxes
             image_result_scores = image_result.pred_instances.scores.unsqueeze(-1)
             image_result_labels = image_result.pred_instances.labels
@@ -67,7 +98,8 @@ class MMDetCustomModel(nn.Module):
         #* 填充到100个
         boxes2d_by_detector_num = boxes2d_by_detector.shape[1]
         added_num = 100-boxes2d_by_detector_num
-        added_tensor = torch.zeros([1, added_num, 5]).cuda()
+        added_tensor = torch.zeros([1, added_num, 5], device=0)
+        boxes2d_by_detector = boxes2d_by_detector.cuda()
         boxes2d_by_detector = torch.cat([boxes2d_by_detector, added_tensor], dim=1)
         data_dict["results_2d"] = boxes2d_by_detector
         return data_dict
