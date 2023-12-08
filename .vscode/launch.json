@@ -87,9 +87,7 @@
                 "--pretrained_model",
                 "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth",
                 "--fix_random_seed",
-                "4698",
-                "--extra_tag",
-                "retainnet_epoch80_gt_sampling_ours_no_pad_seed4698"
+                "666",
             ]
         },
         {
@@ -147,6 +145,23 @@
                 "16",
                 "--ckpt",
                 "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth"
+            ]
+        },
+        {
+            "name": "Test C-CLOCs",
+            "type": "python",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/tools",
+            "program": "test.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--cfg_file",
+                "cfgs/kitti_models/second_car_clocs_contra_fusion_aug.yaml",
+                "--batch_size",
+                "1",
+                "--ckpt",
+                "../output/kitti_models/second_car_clocs_contra_fusion_aug/use_cl_mgs_epoch10/ckpt/checkpoint_epoch_7.pth"
             ]
         },
         {
