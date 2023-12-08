@@ -194,11 +194,11 @@ class SearchValidSpace:
             cur_angle = self.start_angle + idx * self.angle_interval
             text_x = np.cos(np.deg2rad(180-cur_angle)) * (self.range_limit + 3)
             text_y = np.sin(np.deg2rad(180-cur_angle)) * (self.range_limit + 3)
-            self.ax.text(text_x, text_y, str(round(180-cur_angle, 2)), fontsize=16, 
+            self.ax.text(text_x, text_y, str(round(180-cur_angle, 2)), fontsize=20, 
                          color='black', ha='center', va='center', rotation=90-cur_angle)
         text_x = np.cos(np.deg2rad(90-self.angle_limit)) * (self.range_limit + 3)
         text_y = np.sin(np.deg2rad(90-self.angle_limit)) * (self.range_limit + 3)
-        self.ax.text(text_x, text_y, str(round(90-self.angle_limit, 2)), fontsize=16, 
+        self.ax.text(text_x, text_y, str(round(90-self.angle_limit, 2)), fontsize=20, 
                      color='black', ha='center', va='center', rotation=-self.angle_limit)
         
         #* range_text
@@ -211,21 +211,21 @@ class SearchValidSpace:
             text_y = np.sin(np.deg2rad(90+self.angle_limit)) * (cur_range)-1
             x_points.append(text_x+2)
             y_points.append(text_y+1)
-            self.ax.text(text_x, text_y, str(round(cur_range, 2)), fontsize=16, 
+            self.ax.text(text_x, text_y, str(round(cur_range, 2)), fontsize=20, 
                          color='black', ha='center', va='center')
         
         text_x = np.cos(np.deg2rad(90+self.angle_limit)) * (self.range_limit)-2
         text_y = np.sin(np.deg2rad(90+self.angle_limit)) * (self.range_limit)-1
         x_points.append(text_x+2)
         y_points.append(text_y+1)
-        self.ax.text(text_x, text_y, str(round(self.range_limit, 2)), fontsize=16, 
+        self.ax.text(text_x, text_y, str(round(self.range_limit, 2)), fontsize=20, 
                      color='black', ha='center', va='center')
         
         self.ax.scatter(x_points, y_points)
         # 显示图形
         plt.axis('off')
         handles, labels = self.ax.get_legend_handles_labels()
-        self.ax.legend(handles[::-1], labels[::-1], loc = 'lower right', fontsize=16)
+        self.ax.legend(handles[::-1], labels[::-1], loc = 'lower right', fontsize=28)
         plt.savefig('augmented_lidar.png', bbox_inches='tight', dpi = self.fig.dpi, pad_inches=0.0)
         plt.show()
     
@@ -360,6 +360,7 @@ class SearchValidSpace:
             random_idx = random.randint(0, len(choosen_database)-1)
             #* 获取选择的样本的图像路径
             added_image_path = choosen_database[random_idx]['image_path']
+            # added_image_path= '006137_Car_0.png'
             
             filename_base, _ = added_image_path.split('.')
             frame_id, _, idx = filename_base.split('_')
@@ -408,12 +409,17 @@ class SearchValidSpace:
             mv_height = added_boxes_lidar_3d[:, 2] - added_boxes_lidar_3d[:, 5] / 2 - cur_lidar_height
             added_boxes_lidar_3d[:, 2] -= mv_height  # lidar view
             
+            
+            boxes_corners = boxes_to_corners_3d(added_boxes_lidar_3d)
+
+            
             #* 将点云增加到特定位置
             added_bin_file = self.data_root / "gt_database" / (filename_base + '.bin')
             added_points = self.get_lidar_data(added_bin_file)
             added_points[:, 0] += added_boxes_lidar_3d[0][0]
             added_points[:, 1] += added_boxes_lidar_3d[0][1]
             added_points[:, 2] += added_boxes_lidar_3d[0][2]
+
             
             #* 计算bev iou 和已经添加的框计算iof(交集/非添加物体的面积)
             iou = iou3d_nms_utils.boxes_bev_iou_cpu(added_boxes_lidar_3d[:, 0:7], origin_boxes_lidar_3d[:, 0:7])
@@ -439,9 +445,13 @@ class SearchValidSpace:
                     iof = inter/add_obj_area
                   
             if(iou.max() == 0 and iof < self.iof_thresh):
-                # print(added_image_path)
-                self.ax.scatter(-added_boxes_lidar_3d[0][1], added_boxes_lidar_3d[0][0], c='r', s=5,
-                            label = 'choosen position' if not point_vis else None)
+                with open('box_corners.bin', 'w') as f:
+                    boxes_corners.tofile(f)
+                with open('added_lidar.bin', 'w') as f:
+                    added_points[:, :3].tofile(f)
+                print(added_image_path)
+                # self.ax.scatter(-added_boxes_lidar_3d[0][1], added_boxes_lidar_3d[0][0], c='r', s=5,
+                #             label = 'choosen position' if not point_vis else None)
                 #* 只需要加一次标签就可以
                 point_vis = True
                 #* 添加包围框
@@ -457,15 +467,16 @@ class SearchValidSpace:
                 bottom = ceil(bottom)
                 added_boxes_coor2d.append([left, top, right, bottom])
                 #! 画图备用
-                # cv2.imwrite("before_resize.png", added_image)
+                cv2.imwrite("before_resize.png", added_image_kins)
                 #* 将添加的图片resize成这个尺寸
                 added_image = cv2.resize(added_image, (right-left, bottom-top), interpolation=cv2.INTER_LINEAR)
-                #! 画图备用
-                # cv2.imwrite("after_resize.png", added_image)
+
                 #* resize直接粘贴的图片
                 added_image_direct = cv2.resize(added_image_direct, (right-left, bottom-top), interpolation=cv2.INTER_LINEAR)
                 #* resize KINS的mask
                 added_image_kins = cv2.resize(added_image_kins, (right-left, bottom-top), interpolation=cv2.INTER_LINEAR)
+                #! 画图备用
+                cv2.imwrite("after_resize.png", added_image_kins)
                 
                 origin_image = self.paste_image_with_mask(origin_image.copy(), added_image, left, top, right, bottom)
                 origin_image_copy_kins = self.paste_image_with_mask(origin_image.copy(), added_image_kins, left, top, right, bottom)
@@ -474,16 +485,24 @@ class SearchValidSpace:
                 origin_image_copy_direct[top:bottom, left:right, :3] = added_image_direct
         
         for new_top, new_left, new_bottom, new_right in added_boxes_coor2d:
-            cv2.rectangle(origin_image, (new_top, new_left), (new_bottom, new_right), color = (0, 0, 255))
-            cv2.rectangle(origin_image_copy_direct, (new_top, new_left), (new_bottom, new_right), color = (0, 0, 255))
-            cv2.rectangle(origin_image_copy_kins, (new_top, new_left), (new_bottom, new_right), color = (0, 0, 255))
+            origin_image = self.draw_rectangle(origin_image, new_right, new_left, new_bottom, new_top, color = (0, 0, 255))
+            origin_image_copy_direct = self.draw_rectangle(origin_image_copy_direct, new_right, new_left, new_bottom, new_top, color = (0, 0, 255))
+            origin_image_copy_kins = self.draw_rectangle(origin_image_copy_kins, new_right, new_left, new_bottom, new_top, color = (0, 0, 255))
+            
+            # cv2.rectangle(origin_image, (new_top, new_left), (new_bottom, new_right), color = (0, 0, 255), thickness=2)
+            # cv2.rectangle(origin_image_copy_direct, (new_top, new_left), (new_bottom, new_right), color = (0, 0, 255), thickness=2)
+            # cv2.rectangle(origin_image_copy_kins, (new_top, new_left), (new_bottom, new_right), color = (0, 0, 255), thickness=2)
         n = len(origin_labels)
         for idx, (new_top, new_left, new_bottom, new_right) in enumerate(origin_boxes_2d[:n]):
             # TODO 现在是只画车的, 还需要改改
             if(origin_labels[idx].cls_type == 'Car'):
-                cv2.rectangle(origin_image, (floor(new_top), floor(new_left)), (ceil(new_bottom), ceil(new_right)), color = (0, 255, 0))
-                cv2.rectangle(origin_image_copy_direct, (floor(new_top), floor(new_left)), (ceil(new_bottom), ceil(new_right)), color = (0, 255, 0))
-                cv2.rectangle(origin_image_copy_kins, (floor(new_top), floor(new_left)), (ceil(new_bottom), ceil(new_right)), color = (0, 255, 0))
+                origin_image = self.draw_rectangle(origin_image, ceil(new_right), floor(new_left), ceil(new_bottom), floor(new_top), color = (0, 255, 0))
+                origin_image_copy_direct = self.draw_rectangle(origin_image_copy_direct, ceil(new_right), floor(new_left), ceil(new_bottom), floor(new_top), color = (0, 255, 0))
+                origin_image_copy_kins = self.draw_rectangle(origin_image_copy_kins, ceil(new_right), floor(new_left), ceil(new_bottom), floor(new_top), color = (0, 255, 0))
+                
+                # cv2.rectangle(origin_image, (floor(new_top), floor(new_left)), (ceil(new_bottom), ceil(new_right)), color = (0, 255, 0), thickness=2)
+                # cv2.rectangle(origin_image_copy_direct, (floor(new_top), floor(new_left)), (ceil(new_bottom), ceil(new_right)), color = (0, 255, 0), thickness=2)
+                # cv2.rectangle(origin_image_copy_kins, (floor(new_top), floor(new_left)), (ceil(new_bottom), ceil(new_right)), color = (0, 255, 0), thickness=2)
                 
         cv2.imwrite('augmented_image.png', origin_image[:, :, :3])
         cv2.imwrite('augmented_image_direct.png', origin_image_copy_direct[:, :, :3])
@@ -492,6 +511,17 @@ class SearchValidSpace:
         self.plot_lidar(points)
         self.add_boxes(origin_boxes_lidar_3d, origin_label_box_num)
 
+    def draw_rectangle(self, origin_image, new_right, new_left, new_bottom, new_top, color = (0, 0, 255), alpha = 0.7):
+        create = np.zeros((new_right-new_left, new_bottom-new_top, 3), dtype=np.uint8)
+        create[:, :, 0] = color[0]
+        create[:, :, 1] = color[1]
+        create[:, :, 2] = color[2]
+        img_add = cv2.addWeighted(origin_image[new_left:new_right, new_top:new_bottom, 0:3], alpha ,create, 1-alpha, 0)
+        origin_image[new_left:new_right, new_top:new_bottom, 0:3] = img_add
+        cv2.rectangle(origin_image, (new_top, new_left), (new_bottom, new_right), color = color, thickness=2)
+        return origin_image
+        
+    
     def paste_image_with_mask(self, origin_image, added_image, left, top, right, bottom):
         cropped_image = origin_image[top:bottom, left:right, :]
         alpha_mask = added_image[:, :, 3]>0
@@ -500,16 +530,16 @@ class SearchValidSpace:
         
         copy_image = deepcopy(origin_image)
         #! 画图备用
-        # cv2.imwrite("before_blur.png", copy_image)
+        cv2.imwrite("before_blur.png", copy_image)
         copy_image = cv2.GaussianBlur(copy_image, (3, 3), 0)
         #! 画图备用
-        # cv2.imwrite("after_blur.png", copy_image)
+        cv2.imwrite("after_blur.png", copy_image)
         cropped_image = origin_image[top:bottom, left:right, :]
         added_image = copy_image[top:bottom, left:right, :]
         #! 画图备用
-        # added_image[:, :, 3] = 0
-        # added_image[alpha_mask, 3] = 255
-        # cv2.imwrite("added_mask.png", added_image)
+        added_image[:, :, 3] = 0
+        added_image[alpha_mask, 3] = 255
+        cv2.imwrite("added_mask.png", added_image)
         cropped_image[alpha_mask] = added_image[alpha_mask]
         origin_image[top:bottom, left:right, :] = cropped_image
         return origin_image
@@ -536,7 +566,7 @@ if __name__ == '__main__':
     svs = SearchValidSpace("/home/zty/Project/DeepLearning/OpenPCDet/tools/cfgs/dataset_configs/database_generate_kitti.yaml")
     svs.plot_valid_area()
     svs.show()
-    # pngs = ["005192_Car_1.png", "005959_Car_0.png", "007167_Car_0.png", "007459_Car_1.png"]
+    # pngs = ["001322_Car_3.png", "000202_Car_0.png", "005797_Car_4.png", "006431_Car_3.png"]
     # for png in pngs:
     #     basename = png.split('.')[0]
     #     frame_id, typ, idx = basename.split('_')
