@@ -2,13 +2,16 @@ import numpy as np
 import torch.nn as nn
 from ...utils.box_utils import boxes3d_lidar_to_kitti_camera, lidar_boxes_to_image_kitti_torch_cuda
 from ...ops.clocs.clocs_utils import compute_clocs_iou_sparse
+from ...ops.clocs.clocs_utils import cos_similarity
 from ..dense_heads.anchor_head_template import AnchorHeadTemplate
 from ...utils import loss_utils
 import torch.nn.functional as F
-
+from collections import defaultdict
 import torch
 from abc import ABCMeta, abstractmethod
-
+import time
+def get_millisecond():
+    return int(round(time.time() * 1000))
 def _sigmoid_cross_entropy_with_logits(logits, labels):
   loss = torch.clamp(logits, min=0) - logits * labels.type_as(logits) # this is the original
   loss += torch.log1p(torch.exp(-torch.abs(logits)))
@@ -194,15 +197,15 @@ class ClocsSECONDHead(AnchorHeadTemplate):
         self.fuse = []
         for i in range(1, len(num_filters)-1):
             if self.model_cfg.get("USE_RES_BLOCK", False):
+              self.fuse.append(ResnetBlock(num_filters[i-1], num_filters[i]))
+            else:
               self.fuse.append(nn.Conv2d(num_filters[i-1], num_filters[i], 1))
               self.fuse.append(nn.ReLU())
-            else:
-              self.fuse.append(ResnetBlock(num_filters[i-1], num_filters[i]))
             
         #* 因为希望最后的结果不是全部大于0的, 所以没有加ReLU
         self.fuse.append(nn.Conv2d(num_filters[-2], num_filters[-1], 1))
         self.fuse = nn.Sequential(*self.fuse)
-        if self.model_cfg.USE_CONTRA:
+        if self.model_cfg.get("USE_CONTRA", False):
           #* 图像特征的提取器
           self.image_extractor = []
           img_num_filters = self.model_cfg.IMAGE_NUM_FILTERS
@@ -247,7 +250,6 @@ class ClocsSECONDHead(AnchorHeadTemplate):
                                                                    calib_V2C_T, 
                                                                    img_height, 
                                                                    img_width)
-        
         #* 2D目标检测的结果
         boxes2d_by_detector = data_dict['results_2d']
         #* 2D目标检测的个数
@@ -267,8 +269,6 @@ class ClocsSECONDHead(AnchorHeadTemplate):
             boxes_3d_num = box_2d_preds.shape[0]
             overlap = torch.zeros((boxes_3d_num, boxes_2d_num, 4), dtype = box_2d_detector.dtype, device = box_2d_detector.device)-1
             #* 用[iou, 3D目标检测分数, 2D目标检测分数, 到LiDAR的距离来填充]
-            # TODO 修改标记(不用-10)
-            # TODO 增加一个flag表示这个物体没有匹配的3D物体
             ious = compute_clocs_iou_sparse(box_2d_preds.contiguous(),
                                     box_2d_pos.contiguous(),
                                     scores_3d,
@@ -278,6 +278,10 @@ class ClocsSECONDHead(AnchorHeadTemplate):
 
             ious = ious.permute(2, 0, 1).view(1, 4, boxes_3d_num, boxes_2d_num)
             non_empty_mask = (ious[0, 0, :, :]!=-10).nonzero()
+            # if non_empty_mask.shape[0]==0:
+            #   self.cal_loss_flag = False
+            # else:
+            #   self.cal_loss_flag = True
             
             iou_condition = ious[0][0, :, :] > self.model_cfg.IOU_THRESH
             #* 找到每个3D物体中满足条件的2D物体的最大置信度
@@ -299,8 +303,8 @@ class ClocsSECONDHead(AnchorHeadTemplate):
               image_data = box_2d_detector_normalized.permute(0, 1).reshape(1, -1, 1, boxes2d_by_detector.shape[1])
               lidar_features = self.lidar_extractor(lidar_data).squeeze(0)
               image_features = self.image_extractor(image_data).squeeze(0)
-              lidar_features = lidar_features.squeeze().transpose(0, 1).unsqueeze(1)
-              image_features = image_features.squeeze().transpose(0, 1).unsqueeze(0)
+              lidar_features = lidar_features.squeeze().transpose(0, 1).unsqueeze(1).contiguous()
+              image_features = image_features.squeeze().transpose(0, 1).unsqueeze(0).contiguous()
               lidar_num = lidar_features.shape[0]
               image_num = image_features.shape[1]
               feature_dim = image_features.shape[-1]
@@ -308,12 +312,19 @@ class ClocsSECONDHead(AnchorHeadTemplate):
               image_feature_expanded = image_features.expand(lidar_num, image_num, feature_dim) 
               lidar_feature_expanded_list.append(lidar_feature_expanded.view(1, *lidar_feature_expanded.shape))
               image_feature_expanded_list.append(image_feature_expanded.view(1, *image_feature_expanded.shape))
-              sim_feature = F.cosine_similarity(lidar_feature_expanded, image_feature_expanded, -1)[None, None, :, :]
+              sim_feature = torch.zeros(lidar_num, image_num, device = 0)
+              cos_similarity(lidar_features, image_features, sim_feature)
+              sim_feature = sim_feature[None, None, :, :]
+              # sim_feature = F.cosine_similarity(lidar_feature_expanded, image_feature_expanded, -1)[None, None, :, :]
               input_features = torch.cat([input_features, sim_feature], dim=1)
+
+            # if (self.cal_loss_flag):
             non_empty_input_features = (input_features[:, :, non_empty_mask[:, 0], non_empty_mask[:, 1]]).unsqueeze(2)
             new_res = self.fuse(non_empty_input_features)
-            res = torch.zeros((1, 1, boxes_3d_num, boxes_2d_num)).type(torch.float32).cuda()-100
+            res = torch.zeros((1, 1, boxes_3d_num, boxes_2d_num), dtype=torch.float32, device=0)-100
             res[:, :, non_empty_mask[:, 0], non_empty_mask[:, 1]] = new_res.squeeze(2)
+            # else:
+              # res = torch.zeros((1, 1, boxes_3d_num, boxes_2d_num), dtype=torch.float32, device=0)-100
 
             #* 相当于maxpooling
             output = torch.amax(res, dim = -1)
