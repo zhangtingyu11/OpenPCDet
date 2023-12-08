@@ -7,7 +7,8 @@ import tqdm
 
 from pcdet.models import load_data_to_gpu
 from pcdet.utils import common_utils
-
+def get_millisecond():
+    return int(time.time() * 1000)
 
 def statistics_info(cfg, ret_dict, metric, disp_dict):
     for cur_thresh in cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST:
@@ -55,14 +56,24 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
     if cfg.LOCAL_RANK == 0:
         progress_bar = tqdm.tqdm(total=len(dataloader), leave=True, desc='eval', dynamic_ncols=True)
     start_time = time.time()
+    # total_time = 0
+    # total_cnt = 0
     for i, batch_dict in enumerate(dataloader):
         load_data_to_gpu(batch_dict)
 
         if getattr(args, 'infer_time', False):
             start_time = time.time()
-
+        # for _ in range(10000):
+            # s_time = get_millisecond()
         with torch.no_grad():
             pred_dicts, ret_dict = model(batch_dict)
+            # torch.cuda.synchronize()
+            # e_time = get_millisecond()
+            # total_cnt+=1
+            # if(total_cnt >= 10):
+            #     total_time += e_time-s_time
+            #     print("test_time: {}".format(total_time/(total_cnt-9)))
+        
 
         disp_dict = {}
 
