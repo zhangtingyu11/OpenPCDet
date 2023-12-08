@@ -59,6 +59,13 @@ void clocscomputeioudenseLauncher(const int num_3d,
                                   int * tensor_idx, 
                                   int * count);
 
+void cossimilarityLauncher(const float * lidar_features, 
+                                const float * camera_features, 
+                                const int lidar_num, 
+                                const int camera_num,
+                                const int feature_dim,
+                                float * cos_similarity);
+
 int clocs_compute_iou_gpu_sparse(at::Tensor boxes3d_projected, 
                                 at::Tensor boxes_2d, 
                                 at::Tensor scores_3d, 
@@ -142,4 +149,26 @@ int clocs_compute_iou_gpu_dense(at::Tensor boxes3d_projected,
                                 tensor_idx_data,
                                 count_data);
     return 1;
+};
+
+int cos_similarity_gpu(at::Tensor lidar_features, 
+                                at::Tensor camera_features, 
+                                at::Tensor cos_similarity){
+    CHECK_INPUT(lidar_features);
+    CHECK_INPUT(camera_features);
+    CHECK_INPUT(cos_similarity);
+    const int lidar_num = lidar_features.size(0);
+    const int camera_num = camera_features.size(1);
+    const int feature_dim = camera_features.size(2);
+    const float * lidar_features_data = lidar_features.data<float>();
+    const float * camera_features_data = camera_features.data<float>();
+    float * cos_similarity_data = cos_similarity.data<float>();
+    cossimilarityLauncher(lidar_features_data, 
+                          camera_features_data, 
+                          lidar_num, 
+                          camera_num, 
+                          feature_dim, 
+                          cos_similarity_data);
+    return 1;
+
 };

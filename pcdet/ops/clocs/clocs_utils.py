@@ -32,3 +32,11 @@ def compute_clocs_iou_dense(boxes_3d_projected,
                                     overlaps,
                                     tensor_idx, 
                                     count)
+
+def cos_similarity(lidar_features, 
+                    camera_features,
+                    cos_sim 
+):
+    clocs_cuda.cos_similarity_gpu(lidar_features,
+                                  camera_features,
+                                  cos_sim)

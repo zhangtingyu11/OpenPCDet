@@ -23,4 +23,8 @@ int clocs_compute_iou_gpu_dense(at::Tensor boxes3d_projected,
                                 at::Tensor overlap,
                                 at::Tensor tensor_idx,
                                 at::Tensor count);
+
+int cos_similarity_gpu(at::Tensor lidar_features, 
+                                at::Tensor camera_features, 
+                                at::Tensor cos_similarity);
 #endif
