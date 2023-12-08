@@ -137,7 +137,7 @@ class Segment_Ground_Truth_KITTI:
         
     def read_image(self, frame_id):
         #* 加上.png后缀
-        image_name = frame_id+'.png'
+        image_name = str(frame_id).zfill(6)+'.png'
         #* 设置图像的路径
         if self.split in ['train', 'val', 'trainval']:
             image_path = self.data_root / 'training' / 'image_2' /  image_name
@@ -186,7 +186,7 @@ class Segment_Ground_Truth_KITTI:
         centerx = (tlx+brx)/2
         centery = (tly+bry)/2
 
-        img=cv2.rectangle(img, (floor(tlx), floor(tly)), (ceil(brx), ceil(bry)), (0, 255, 0), 2)
+        img=cv2.rectangle(img, (floor(tlx), floor(tly)), (ceil(brx), ceil(bry)), (0, 255, 0), 3)
         cv2.circle(img, (round(centerx), round(centery)), radius = 4, color=(0, 0, 255), thickness=-1)
         return img
 
@@ -525,12 +525,12 @@ class Segment_Ground_Truth_KITTI:
             cv2.rectangle(black_white_close, 
                         (floor(top_left_y), floor(top_left_x)), (ceil(bottom_right_y), ceil(bottom_right_x)),
                         (0, 255, 0), 
-                        2)
+                        3)
             cv2.rectangle(black_white_close, 
                     (floor(left), floor(top)), (ceil(right), ceil(bottom)),
                     (0, 0, 255), 
-                    2)
-            self.custom_save_img(black_white_close, 'gt_and_pred', transparent=False)
+                    3)
+            self.custom_save_img(black_white_close, 'gt_and_pred')
             #* 计算iou
             tlx, tly, brx, bry = left, top, right, bottom
             qbox_area = (brx - tlx) * (bry - tly)
@@ -562,10 +562,10 @@ class Segment_Ground_Truth_KITTI:
         
 if __name__ == '__main__':
     sgtk = Segment_Ground_Truth_KITTI("tools/cfgs/dataset_configs/database_generate_kitti.yaml")
-    #! 34
+    # #! 34
     # sgtk.read_image(34)
     # masks = sgtk.generate_mask()
-    # sgtk.show_mask_with_black_and_white((46.17, 196.15, 328.40, 286.09), masks)
+    # sgtk.show_mask_with_black_and_white((46.17, 196.15, 328.40, 286.09), masks, "generate_black_and_white_image_after_close")
     # img = sgtk.show_anns(masks)
     # img = sgtk.add_box(img, (46.17, 196.15, 328.40, 286.09))
     # sgtk.custom_save_img(img, 'sam_mask')
@@ -573,7 +573,7 @@ if __name__ == '__main__':
     #! 3
     # sgtk.read_image(3)
     # masks = sgtk.generate_mask()
-    # sgtk.show_mask_with_black_and_white((614.24, 181.78, 727.31, 284.77), masks)
+    # sgtk.show_mask_with_black_and_white((614.24, 181.78, 727.31, 284.77), masks, "generate_black_and_white_image_after_close")
     # img = sgtk.show_anns(masks)
     # img = sgtk.add_box(img, (614.24, 181.78, 727.31, 284.77))
     # sgtk.custom_save_img(img, 'sam_mask')
@@ -581,7 +581,7 @@ if __name__ == '__main__':
     #! 29
     # sgtk.read_image(29)
     # masks = sgtk.generate_mask()
-    # sgtk.show_mask_with_black_and_white((652.31, 174.94, 690.16, 204.97), masks)
+    # sgtk.show_mask_with_black_and_white((652.31, 174.94, 690.16, 204.97), masks, "generate_black_and_white_image_after_close")
     # img = sgtk.show_anns(masks)
     # img = sgtk.add_box(img, (652.31, 174.94, 690.16, 204.97))
     # sgtk.custom_save_img(img, 'sam_mask')
