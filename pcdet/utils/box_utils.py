@@ -6,8 +6,9 @@ from scipy.spatial import Delaunay
 
 from ..ops.roiaware_pool3d import roiaware_pool3d_utils
 from . import common_utils
-
-
+import time
+def get_milliseconds():
+    return int(round(time.time() * 1000))
 def in_hull(p, hull):
     """
     :param p: (N, K) test points
@@ -107,14 +108,14 @@ def lidar_boxes_to_image_kitti_torch_cuda(boxes, P2_T, R0_T, V2C_T, img_height, 
     boxes = boxes.view(-1, dim)
     points = boxes_to_corners_3d(boxes)
     #* 转化为齐次坐标
-    points_homo = torch.cat([points, torch.ones((*points.shape[:2], 1)).cuda()], dim=-1)
+    points_homo = torch.cat([points, torch.ones((*points.shape[:2], 1), device=0)], dim=-1)
     points_homo = points_homo.view(batch_size, -1, 4)
     #* 转化到rect
     lidar_to_rect_matrix = torch.einsum('bij, bjk->bik', V2C_T, R0_T)
     points_rect = torch.einsum('bij, bjk->bik', points_homo, lidar_to_rect_matrix)
     
     #* rect坐标转化到齐次坐标
-    points_rect_homo = torch.cat([points_rect, torch.ones((*points_rect.shape[:2], 1)).cuda()], dim=-1)
+    points_rect_homo = torch.cat([points_rect, torch.ones((*points_rect.shape[:2], 1), device=0)], dim=-1)
     
     #* 计算投影到图像上的二维坐标
     points_on_image = torch.einsum('bij,bjk->bik', points_rect_homo, P2_T).view(-1, 3)
@@ -126,10 +127,10 @@ def lidar_boxes_to_image_kitti_torch_cuda(boxes, P2_T, R0_T, V2C_T, img_height, 
     y_min, _ = torch.min(points_on_image[:, :, :, 1], dim=-1)
     y_max, _ = torch.max(points_on_image[:, :, :, 1], dim=-1)
     
-    x_min = torch.clamp(x_min,min = torch.zeros(batch_size, 1).cuda(),max = img_width.unsqueeze(-1)).unsqueeze(-1)
-    y_min = torch.clamp(y_min,min = torch.zeros(batch_size, 1).cuda(),max = img_height.unsqueeze(-1)).unsqueeze(-1)
-    x_max = torch.clamp(x_max,min = torch.zeros(batch_size, 1).cuda(),max = img_width.unsqueeze(-1)).unsqueeze(-1)
-    y_max = torch.clamp(y_max,min = torch.zeros(batch_size, 1).cuda(),max = img_height.unsqueeze(-1)).unsqueeze(-1)
+    x_min = torch.clamp(x_min,min = torch.zeros(batch_size, 1, device = 0),max = img_width.unsqueeze(-1)).unsqueeze(-1)
+    y_min = torch.clamp(y_min,min = torch.zeros(batch_size, 1, device = 0),max = img_height.unsqueeze(-1)).unsqueeze(-1)
+    x_max = torch.clamp(x_max,min = torch.zeros(batch_size, 1, device = 0),max = img_width.unsqueeze(-1)).unsqueeze(-1)
+    y_max = torch.clamp(y_max,min = torch.zeros(batch_size, 1, device = 0),max = img_height.unsqueeze(-1)).unsqueeze(-1)
     
     points_project_on_image = torch.cat([x_min, y_min, x_max, y_max], dim=-1)
     return points_project_on_image
