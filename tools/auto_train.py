@@ -2,125 +2,130 @@ import os
 from decimal import Decimal
 import random
 
+SECOND_CLOCS_CONTRA_FUSION_AUG_FILE = "/home/zty/Project/DeepLearning/OpenPCDet/tools/cfgs/kitti_models/second_car_clocs_contra_fusion_aug.yaml"
+SECOND_CLOCS_FILE = "/home/zty/Project/DeepLearning/OpenPCDet/tools/cfgs/kitti_models/second_car_clocs.yaml"
+SECOND_PRETRAINED_MODEL = "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth"
+SECOND_CLOCS_CONTRA_FUSION_AUG_FILE_RELATIVE = "cfgs/kitti_models/second_car_clocs_contra_fusion_aug.yaml"
+
+def change_config_file(config_file, line_idx, change_component, need_comma=False):
+    """修改配置文件中的某个信息
+
+    Args:
+        config_file (_type_): 配置文件的路径
+        line_idx (_type_): 需要修改的行数
+        change_component (_type_): 需要修改成什么内容
+    """
+    with open(config_file, 'r') as f:
+        lines = f.readlines()
+        modify_line = lines[line_idx]
+        splits = modify_line.split(': ')
+        if need_comma:
+            splits[-1] = str(change_component) + ',\n'
+        else:
+            splits[-1] = str(change_component) + '\n'
+        lines[line_idx] = ': '.join(splits)
+        
+    with open(config_file, 'w') as f:
+        for line in lines:
+            f.write(line)
+        
+def auto_train_command(cfg_file, random_seed, tag, pretrained_model=None):
+    """填充训练的指令
+    
+    Args:
+        cfg_file (_type_): 配置文件
+        random_seed (_type_): 随机种子
+        tag (_type_): 训练时的标签
+        pretrained_model (_type_, optional): 预训练模型. Defaults to None.
+    """
+    if pretrained_model is None:
+        os.system("python train.py --cfg_file {} --fix_random_seed {} --extra_tag {}".format(
+            cfg_file, random_seed, tag
+        ))
+    else:
+        os.system("python train.py --cfg_file {} --fix_random_seed {} --extra_tag {} --pretrained_model {}".format(
+            cfg_file, random_seed, tag, pretrained_model
+        ))
+
 def influence_of_detector2d():
+    """测试不同准确度的2D目标检测器对结果的影响
+    """
     scores = [[0, 0.2], [0.6, 1.0], [0.9, 1.0]]
+    propotion_line_idx = 69
+    low_score_line_idx = 70
+    high_score_line_idx = 71
     propotions = [0.5, 1]
     for propotion in propotions:
+        change_config_file(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE, propotion_line_idx, propotion)
         for low_score, high_score in scores:
-            yaml_file = "/home/zty/Project/DeepLearning/OpenPCDet/tools/cfgs/kitti_models/second_car_clocs_contra_fusion_aug.yaml"
-            propotion_line_idx = 69
-            low_score_line_idx = 70
-            high_score_line_idx = 71
-            with open(yaml_file, 'r') as f:
-                lines = f.readlines()
-                propotion_line = lines[propotion_line_idx]
-                splits = propotion_line.split(': ')
-                splits[-1] = str(propotion)+'\n'
-                lines[propotion_line_idx] = ': '.join(splits)
-                
-                low_score_line = lines[low_score_line_idx]
-                splits = low_score_line.split(': ')
-                splits[-1] = str(low_score)+'\n'
-                lines[low_score_line_idx] = ': '.join(splits)
-                
-                high_score_line = lines[high_score_line_idx]
-                splits = high_score_line.split(': ')
-                splits[-1] = str(high_score)+'\n'
-                lines[high_score_line_idx] = ': '.join(splits)
-            with open(yaml_file, 'w') as f:
-                for line in lines:
-                    f.write(line)
-            os.system('python train.py --cfg_file cfgs/kitti_models/second_car_clocs_contra_fusion_aug.yaml --fix_random_seed 666 --extra_tag retinanet_epoch10_seed666_low_score' + str(low_score) +\
-                '_high_score_' + str(high_score) + '_propotion_' + str(propotion) + ' --pretrained_model ../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth')   
-            
+            change_config_file(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE, low_score_line_idx, low_score)
+            change_config_file(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE, high_score_line_idx, high_score)
+            extra_tag = "origin_high{}_low{}".format(high_score, low_score)   
+            auto_train_command(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE_RELATIVE, 666, extra_tag, SECOND_PRETRAINED_MODEL)
 
-def compare():
-    config_files = ['/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/retinanet_r18_fpn_1x_coco/20230927_150345/vis_data/config.py', 
-                    '/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/retinanet_r50_fpn_1x_coco/20230927_155447/vis_data/config.py',
-                    '/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/cascade-rcnn_r50_fpn_1x_coco/20230928_003043/vis_data/config.py',
-                    '/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/cascade-rcnn_r50_fpn_20e_coco/20230928_012105/vis_data/config.py']
-    weight_files = ['/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/retinanet_r18_fpn_1x_coco/epoch_9.pth', 
-                    '/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/retinanet_r50_fpn_1x_coco/epoch_12.pth',
-                    '/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/cascade-rcnn_r50_fpn_1x_coco/epoch_5.pth',
-                    '/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/cascade-rcnn_r50_fpn_20e_coco/epoch_7.pth'
-                    ]
-    for i in range(len(config_files)):
-        config_file = config_files[i]
-        weight_file = weight_files[i]
-        tag = config_file.split('/')[8]
-        yaml_file = "/home/zty/Project/DeepLearning/OpenPCDet/tools/cfgs/kitti_models/second_car_clocs_contra.yaml"
-        config_file_line = 64
-        weight_file_line = 65
-        with open(yaml_file, 'r') as f:
-            lines = f.readlines()
-            config_line = lines[config_file_line]
-            splits = config_line.split(': ')
-            splits[-1] = config_file+'\n'
-            lines[config_file_line] = ': '.join(splits)
-            
-            weight_line = lines[weight_file_line]
-            splits = weight_line.split(': ')
-            splits[-1] = weight_file+'\n'
-            lines[weight_file_line] = ': '.join(splits)
-        with open(yaml_file, 'w') as f:
-            for line in lines:
-                f.write(line)
-        os.system('python train.py --cfg_file cfgs/kitti_models/second_car_clocs_contra.yaml --fix_random_seed 666 --extra_tag ' + tag + '_epoch10_no_gt_sampling_ours_filter_no_pad_seed666' +\
-            ' --pretrained_model ../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth')   
-        
-        yaml_file = "/home/zty/Project/DeepLearning/OpenPCDet/tools/cfgs/kitti_models/second_car_clocs.yaml"
-        config_file_line = 64
-        weight_file_line = 65
-        with open(yaml_file, 'r') as f:
-            lines = f.readlines()
-            config_line = lines[config_file_line]
-            splits = config_line.split(': ')
-            splits[-1] = config_file+'\n'
-            lines[config_file_line] = ': '.join(splits)
-            
-            weight_line = lines[weight_file_line]
-            splits = weight_line.split(': ')
-            splits[-1] = weight_file+'\n'
-            lines[weight_file_line] = ': '.join(splits)
-        with open(yaml_file, 'w') as f:
-            for line in lines:
-                f.write(line)
-        os.system('python train.py --cfg_file cfgs/kitti_models/second_car_clocs.yaml --fix_random_seed 666 --extra_tag ' + tag + '_epoch10_no_gt_sampling_ours_filter_no_pad_seed666' +\
-            ' --pretrained_model ../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth')  
-
+#TODO
 def choose_contra_weight():
-    weights = ['0.001', '0.01', '0.1', '1.0']
-    
-    for weight in weights:
-        config_file = '/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/retinanet_r18_fpn_1x_coco/20230927_150345/vis_data/config.py'
-        weight_file = '/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/retinanet_r18_fpn_1x_coco/epoch_9.pth'
-        tag = config_file.split('/')[8]
-        yaml_file = "/home/zty/Project/DeepLearning/OpenPCDet/tools/cfgs/kitti_models/second_car_clocs_contra.yaml"
-        config_file_line = 64
-        weight_file_line = 65
-        contra_weight_line = 141
+    """测试不同的对比学习loss权重
+    """
+    contra_weights = ['0.001', '0.01', '0.1', '0.2', '0.3,', '0.4', '0.5', '0.6', '0.7', '0.8', '1.0']
+    line_idx = 149
+    for contra_weight in contra_weights:
+        change_config_file(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE, line_idx, contra_weight, need_comma=True)
+        extra_tag = "origin_contraweight{}".format(contra_weight)
+        auto_train_command(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE_RELATIVE, 666, extra_tag, SECOND_PRETRAINED_MODEL)
+
+def choose_pos_neg_thresh():
+    """测试不同的pos neg阈值
+    """
+    clos_pos_iou_threshs = ['0.5', '0.55', '0.6', '0.65', '0.7']
+    pos_iou_threshs_line = 122
+    clos_neg_iou_threshs = ['0.1', '0.15', '0.2', '0.25', '0.3', '0.35']
+    neg_iou_threshs_line = 123
+    for pos_thr in clos_pos_iou_threshs:
+        change_config_file(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE, pos_iou_threshs_line, pos_thr)
+        for neg_thr in clos_neg_iou_threshs:
+            change_config_file(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE, neg_iou_threshs_line, neg_thr)
+            extra_tag = "origin_pos{}_neg{}".format(pos_thr, neg_thr)
+            auto_train_command(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE_RELATIVE, 666, extra_tag, SECOND_PRETRAINED_MODEL)
+            
+def choose_iou_thresh():
+    """测试不同的IOU_THRESH
+    """
+    iou_threshs = ['0.1', '0.15', '0.2', '0.25', '0.3', '0.35', '0.4', '0.45', '0.5', '0.55', '0.6', '0.65', '0.7']
+    line_idx = 121
+    for iou_thresh in iou_threshs:
+        change_config_file(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE, line_idx, iou_thresh)
+        extra_tag = "origin_iouthresh{}".format(iou_thresh)
+        auto_train_command(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE_RELATIVE, 666, extra_tag, SECOND_PRETRAINED_MODEL)
         
-        with open(yaml_file, 'r') as f:
-            lines = f.readlines()
-            config_line = lines[config_file_line]
-            splits = config_line.split(': ')
-            splits[-1] = config_file+'\n'
-            lines[config_file_line] = ': '.join(splits)
-            
-            weight_line = lines[weight_file_line]
-            splits = weight_line.split(': ')
-            splits[-1] = weight_file+'\n'
-            lines[weight_file_line] = ': '.join(splits)
-            
-            contra_weight = lines[contra_weight_line]
-            splits = contra_weight.split(': ')
-            splits[-1] = weight+',\n'
-            lines[contra_weight_line] = ': '.join(splits)
-        with open(yaml_file, 'w') as f:
-            for line in lines:
-                f.write(line)
-        os.system('python train.py --cfg_file cfgs/kitti_models/second_car_clocs_contra.yaml --fix_random_seed 666 --extra_tag ' + tag + '_epoch1_no_gt_sampling_ours_filter_no_pad_seed666_weight' + weight +\
-            ' --pretrained_model ../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth')   
+        
+def choose_contra_match_iou():
+    """测试不同的CONTRA_MATCH_IOU
+    """
+    contra_match_ious = ['0.1', '0.2', '0.3', '0.4', '0.5', '0.55', '0.6', '0.65', '0.7', '0.8', '0.9']
+    line_idx = 120
+    for contra_match_iou in contra_match_ious:
+        change_config_file(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE, line_idx, contra_match_iou)
+        extra_tag = "origin_contrathresh{}".format(contra_match_iou)
+        auto_train_command(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE_RELATIVE, 666, extra_tag, SECOND_PRETRAINED_MODEL)
+        
+#TODO
+def choose_random_seed():
+    loops = 10
+    for _ in range(loops):
+        seed = random.randint(1, 10000)
+        extra_tag = "origin_seed{}".format(seed)
+        auto_train_command(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE_RELATIVE, seed, extra_tag, SECOND_CLOCS_CONTRA_FUSION_AUG_FILE)
+    
+def train_with_and_wo_aug():
+    auto_train_command(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE_RELATIVE, 666, "use_la_mgs_epoch10", SECOND_PRETRAINED_MODEL)
+    change_config_file(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE, 117, "5")
+    change_config_file(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE, 126, "True")
+    change_config_file(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE, 127, "False")
+    auto_train_command(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE_RELATIVE, 666, "use_cl_mgs_epoch10", SECOND_PRETRAINED_MODEL)
+    
+    
 
 if __name__=="__main__":
-    influence_of_detector2d()
+    # choose_contra_weight()
+    train_with_and_wo_aug()
