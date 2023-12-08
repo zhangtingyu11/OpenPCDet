@@ -28,9 +28,26 @@ DATA_CONFIG:
 
         #     - NAME: random_world_scaling
         #       WORLD_SCALE_RANGE: [0.95, 1.05]
-    GET_ITEM_LIST: ["points", "mmcv_images", "images", "gt_boxes2d"]
+    GET_ITEM_LIST: ["points", "images", "gt_boxes2d"]
+    DATA_PROCESSOR:
+    - NAME: mask_points_and_boxes_outside_range
+      REMOVE_OUTSIDE_BOXES: True
 
-     
+    - NAME: shuffle_points
+      SHUFFLE_ENABLED: {
+        'train': False,
+        'test': False
+      }
+
+    - NAME: transform_points_to_voxels
+      VOXEL_SIZE: [0.05, 0.05, 0.1]
+      MAX_POINTS_PER_VOXEL: 5
+      MAX_NUMBER_OF_VOXELS: {
+        'train': 40000,
+        'test': 40000
+      }
+
+
 MODEL:
     NAME: ClocsNet
 
@@ -54,8 +71,15 @@ MODEL:
         NUM_UPSAMPLE_FILTERS: [128, 128]
     DETECTOR_2D:
         NAME: MMDetCustomModel
-        IMAGE_DETECTOR_CONFIG_FILE: '/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/retinanet_r18_fpn_1x_coco/20230801_120418/vis_data/config.py'
-        IMAGE_DETECTOR_WEIGHTS_FILE: '/home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/retinanet_r18_fpn_1x_coco/epoch_12.pth'
+        IMAGE_DETECTOR_CONFIG_FILE: /home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/retinanet_r18_fpn_1x_coco/20230927_150345/vis_data/config.py
+        IMAGE_DETECTOR_WEIGHTS_FILE: /home/zty/Project/DeepLearning/OpenPCDet/mmdetection/work_dirs_single_class/retinanet_r18_fpn_1x_coco/epoch_9.pth
+        DEPLOY_CFG: /home/zty/Project/DeepLearning/mmdeploy/configs/mmdet/detection/detection_onnxruntime_dynamic.py
+        BACKEND_MODEL: ['/home/zty/Project/DeepLearning/mmdeploy/mmdeploy_models/mmdet/ort/end2end.onnx']
+        USE_GT: False
+        VAL_ACTIVATED: False
+        PROPOTION: 0
+        LOWER_SCORE: 0
+        HIGHER_SCORE: 0
     DENSE_HEAD:
         NAME: AnchorHeadSingle
         CLASS_AGNOSTIC: False
@@ -173,16 +197,43 @@ MODEL:
     FUSION_HEAD:
         NAME: ClocsVoxelRCNNHead
         CLASS_AGNOSTIC: False
+        USE_RES_BLOCK: False
         INPUT_FEATURES: 4
-        OVERLAP_MAX_NUM: 
+        
+        IOU_THRESH: 0.3
+        CLOCS_POS_IOU_THRESH: 0.5
+        CLOCS_NEG_IOU_THRESH: 0.2
+        USE_CONTRA: False #* 是否使用对比学习
+        USE_LA: False
+
+        TARGET_ASSIGNER_CONFIG:
+            NAME: PredAxisAlignedTargetAssigner
+            POS_FRACTION: -1.0
+            SAMPLE_SIZE: 512
+            NORM_BY_NUM_EXAMPLES: False
+            MATCH_HEIGHT: False
+            BOX_CODER: ResidualCoder
         LOSS_CONFIG:
             CLS_LOSS: BinaryCrossEntropy
             LOSS_WEIGHTS: {
-                'rcnn_cls_weight': 1.0,
+                'cls_weight': 1.0,
+                'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
             }
 
         NUM_FILTERS: [18, 36, 36, 1]
         MAXPOOL_DIM: 200
+        ANCHOR_GENERATOR_CONFIG: [
+            {
+                'class_name': 'Car',
+                'anchor_sizes': [[3.9, 1.6, 1.56]],
+                'anchor_rotations': [0, 1.57],
+                'anchor_bottom_heights': [-1.78],
+                'align_center': False,
+                'feature_map_stride': 8,
+                'matched_threshold': 0.7,   #! 比之前高点
+                'unmatched_threshold': 0.5  #! 比之前高点
+            },
+        ]
 
     POST_PROCESSING:
         RECALL_THRESH_LIST: [0.3, 0.5, 0.7]
@@ -195,13 +246,13 @@ MODEL:
             MULTI_CLASSES_NMS: False
             NMS_TYPE: nms_gpu
             NMS_THRESH: 0.01
-            NMS_PRE_MAXSIZE: 1000
+            NMS_PRE_MAXSIZE: 4096
             NMS_POST_MAXSIZE: 500
 
 
 OPTIMIZATION:
     BATCH_SIZE_PER_GPU: 1
-    NUM_EPOCHS: 80
+    NUM_EPOCHS: 1
 
     OPTIMIZER: adam_onecycle
     LR: 0.003
