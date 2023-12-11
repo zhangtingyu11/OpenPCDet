@@ -152,7 +152,7 @@ __global__ void cos_similarity_kernel(const float * lidar_features,
         camera_distance += camera_feature[i] * camera_feature[i];
     }
     float eps = 1e-8;
-    target_pos[0] = inner_product / max((sqrt(lidar_distance) * sqrt(camera_distance)), eps);
+    target_pos[0] = inner_product / (sqrt(lidar_distance) * sqrt(camera_distance) + eps);
     // if(boxes3d_idx == 1 && boxes2d_idx == 0){
     //     printf("inner_product: %f\n", inner_product);
     //     printf("lidar_distance: %f\n", lidar_distance);
