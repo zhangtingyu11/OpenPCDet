@@ -15,3 +15,8 @@ venv/
 *.bin
 output
 version.py
+mmdetection
+*.png
+tools/image_data
+tests
+*.eps
