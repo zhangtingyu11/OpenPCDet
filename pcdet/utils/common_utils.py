@@ -201,6 +201,7 @@ def init_dist_pytorch(tcp_port, local_rank, backend='nccl'):
         # world_size=num_gpus
     )
     rank = dist.get_rank()
+    torch.cuda.set_device(rank % num_gpus)
     return num_gpus, rank
 
 
