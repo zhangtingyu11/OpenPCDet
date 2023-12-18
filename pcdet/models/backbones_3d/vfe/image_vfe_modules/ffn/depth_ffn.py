@@ -48,22 +48,30 @@ class DepthFFN(nn.Module):
         """
         # Pixel-wise depth classification
         images = batch_dict["images"]
+        """
+        CaDDN
+        ddn_result包含两个键值对:
+        features: (batch_size, 256, H/4, W/4), 图像特征
+        logits: 经过一个分类器之后再上采样到特征图大小, (batch_size, 81, H/4, W/4)
+        """
         ddn_result = self.ddn(images)
         image_features = ddn_result["features"]
         depth_logits = ddn_result["logits"]
 
         # Channel reduce
         if self.channel_reduce is not None:
+            #* CaDDN中要进行通道降维, 送入1*1的步长为1的卷积(256->64), BN2D, ReLU中
             image_features = self.channel_reduce(image_features)
 
         # Create image feature plane-sweep volume
+        #* 最后输出的尺寸是[batch_size, C, 80(深度的类别数), H/4, W/4], 特征乘上这个类别深度的概率
         frustum_features = self.create_frustum_features(image_features=image_features,
                                                         depth_logits=depth_logits)
         batch_dict["frustum_features"] = frustum_features
 
         if self.training:
-            self.forward_ret_dict["depth_maps"] = batch_dict["depth_maps"]
-            self.forward_ret_dict["gt_boxes2d"] = batch_dict["gt_boxes2d"]
+            self.forward_ret_dict["depth_maps"] = batch_dict["depth_maps"]  #* 深度图的标签
+            self.forward_ret_dict["gt_boxes2d"] = batch_dict["gt_boxes2d"]  #* 2D包围框的标签
             self.forward_ret_dict["depth_logits"] = depth_logits
         return batch_dict
 
@@ -84,11 +92,13 @@ class DepthFFN(nn.Module):
         depth_logits = depth_logits.unsqueeze(channel_dim)
 
         # Apply softmax along depth axis and remove last depth category (> Max Range)
+        #* 对预测的深度值计算softmax, 然后去掉最后一类, 最后一类是超过最大距离的情况
         depth_probs = F.softmax(depth_logits, dim=depth_dim)
         depth_probs = depth_probs[:, :, :-1]
 
         # Multiply to form image depth feature volume
         frustum_features = depth_probs * image_features
+        #* 最后输出的尺寸是[batch_size, C, 80(深度的类别数), H/4, W/4]
         return frustum_features
 
     def get_loss(self):

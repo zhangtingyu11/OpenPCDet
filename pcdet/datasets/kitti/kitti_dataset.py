@@ -387,6 +387,7 @@ class KittiDataset(DatasetTemplate):
 
         if 'annos' in info:
             annos = info['annos']
+            #* 丢弃掉类别为'DontCare'的数据
             annos = common_utils.drop_info_with_name(annos, name='DontCare')
             loc, dims, rots = annos['location'], annos['dimensions'], annos['rotation_y']
             gt_names = annos['name']
@@ -416,9 +417,15 @@ class KittiDataset(DatasetTemplate):
             input_dict['images'] = self.get_image(sample_idx)
 
         if "depth_maps" in get_item_list:
+            #* 获取预先设置好的深度图, 深度图用0~65535的数来存, 除256就是深度
             input_dict['depth_maps'] = self.get_depth_map(sample_idx)
 
         if "calib_matricies" in get_item_list:
+            """
+                返回两个矩阵
+                input_dict["trans_lidar_to_cam"]为LiDAR坐标系转到修正后的相机坐标系的转换矩阵
+                input_dict["trans_cam_to_img"]为修正后的相机坐标系转到图像坐标系的转换矩阵
+            """
             input_dict["trans_lidar_to_cam"], input_dict["trans_cam_to_img"] = kitti_utils.calib_to_matricies(calib)
 
         input_dict['calib'] = calib

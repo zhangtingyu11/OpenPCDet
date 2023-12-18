@@ -50,6 +50,7 @@ class AxisAlignedTargetAssigner(object):
         gt_classes = gt_boxes_with_classes[:, :, -1]
         gt_boxes = gt_boxes_with_classes[:, :, :-1]
         for k in range(batch_size):
+            #* 去除因为batchsize填充而导致的无效gt
             cur_gt = gt_boxes[k]
             cnt = cur_gt.__len__() - 1
             while cnt > 0 and cur_gt[cnt].sum() == 0:
@@ -122,8 +123,8 @@ class AxisAlignedTargetAssigner(object):
         cls_labels = torch.stack(cls_labels, dim=0)
         reg_weights = torch.stack(reg_weights, dim=0)
         all_targets_dict = {
-            'box_cls_labels': cls_labels,
-            'box_reg_targets': bbox_targets,
+            'box_cls_labels': cls_labels,   #* 0是负样本, >0是正样本, -1是ignore
+            'box_reg_targets': bbox_targets,    
             'reg_weights': reg_weights
 
         }
@@ -138,21 +139,29 @@ class AxisAlignedTargetAssigner(object):
         gt_ids = torch.ones((num_anchors,), dtype=torch.int32, device=anchors.device) * -1
 
         if len(gt_boxes) > 0 and anchors.shape[0] > 0:
+            #* 计算anchor与gt的iou
             anchor_by_gt_overlap = iou3d_nms_utils.boxes_iou3d_gpu(anchors[:, 0:7], gt_boxes[:, 0:7]) \
                 if self.match_height else box_utils.boxes3d_nearest_bev_iou(anchors[:, 0:7], gt_boxes[:, 0:7])
 
             # NOTE: The speed of these two versions depends the environment and the number of anchors
             # anchor_to_gt_argmax = torch.from_numpy(anchor_by_gt_overlap.cpu().numpy().argmax(axis=1)).cuda()
+            #* anchor_to_gt_argmax表示和anchor的iou最大的gt的索引
             anchor_to_gt_argmax = anchor_by_gt_overlap.argmax(dim=1)
+            #* anchor_to_gt_max表示和anchor的iou最大的iou
             anchor_to_gt_max = anchor_by_gt_overlap[torch.arange(num_anchors, device=anchors.device), anchor_to_gt_argmax]
 
             # gt_to_anchor_argmax = torch.from_numpy(anchor_by_gt_overlap.cpu().numpy().argmax(axis=0)).cuda()
+            #* gt_to_anchor_argmax表示和gt的iou最大的anchor的索引
             gt_to_anchor_argmax = anchor_by_gt_overlap.argmax(dim=0)
+            #* gt_to_anchor_max表示和gt的iou最大的iou
             gt_to_anchor_max = anchor_by_gt_overlap[gt_to_anchor_argmax, torch.arange(num_gt, device=anchors.device)]
+            #* empty_gt_mask表示没有anchor和这个gt对应
             empty_gt_mask = gt_to_anchor_max == 0
             gt_to_anchor_max[empty_gt_mask] = -1
 
+            #* 和gt的iou最大的anchor的索引
             anchors_with_max_overlap = (anchor_by_gt_overlap == gt_to_anchor_max).nonzero()[:, 0]
+            #* 求这些anchor对应的gt的索引
             gt_inds_force = anchor_to_gt_argmax[anchors_with_max_overlap]
             labels[anchors_with_max_overlap] = gt_classes[gt_inds_force]
             gt_ids[anchors_with_max_overlap] = gt_inds_force.int()
@@ -185,6 +194,7 @@ class AxisAlignedTargetAssigner(object):
                 labels[:] = 0
             else:
                 labels[bg_inds] = 0
+                #* 因为可能会存在一个anchor和一个gt0有着最大的iou, 但是和gt1的iou更大, 它的标签会被覆盖, 因此选择gt0作为其标签
                 labels[anchors_with_max_overlap] = gt_classes[gt_inds_force]
 
         bbox_targets = anchors.new_zeros((num_anchors, self.box_coder.code_size))

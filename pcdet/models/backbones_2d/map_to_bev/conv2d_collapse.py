@@ -32,7 +32,9 @@ class Conv2DCollapse(nn.Module):
                 spatial_features: (B, C, Y, X), BEV feature representation
         """
         voxel_features = batch_dict["voxel_features"]
+        #* 将3D特征转化为BEV特征(batch_size, C, Z, Y, X)->(batch_size, C*Z, Y, X)
         bev_features = voxel_features.flatten(start_dim=1, end_dim=2)  # (B, C, Z, Y, X) -> (B, C*Z, Y, X)
+        #* 经过一个1*1的步长为1的的卷积(1600->64), BatchNorm2D, ReLU
         bev_features = self.block(bev_features)  # (B, C*Z, Y, X) -> (B, C, Y, X)
         batch_dict["spatial_features"] = bev_features
         return batch_dict

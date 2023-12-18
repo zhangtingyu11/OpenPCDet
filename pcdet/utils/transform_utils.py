@@ -49,6 +49,7 @@ def normalize_coords(coords, shape):
     shape = torch.flip(shape, dims=[0])  # Reverse ordering of shape
 
     # Subtract 1 since pixel indexing from [0, shape - 1]
+    #* 将元素转化到[-1, 1]范围内, 但是因为有些点不在图像内, 所以可能出现超过[-1, 1]范围的情况
     norm_coords = coords / (shape - 1) * (max_n - min_n) + min_n
     return norm_coords
 
@@ -72,7 +73,7 @@ def bin_depths(depth_map, mode, depth_min, depth_max, num_bins, target=False):
     if mode == "UD":
         bin_size = (depth_max - depth_min) / num_bins
         indices = ((depth_map - depth_min) / bin_size)
-    elif mode == "LID":
+    elif mode == "LID": #* 根据论文Categorical Depth Distribution Network for Monocular 3D Object Detection给出的公式推出
         bin_size = 2 * (depth_max - depth_min) / (num_bins * (1 + num_bins))
         indices = -0.5 + 0.5 * torch.sqrt(1 + 8 * (depth_map - depth_min) / bin_size)
     elif mode == "SID":

@@ -93,24 +93,27 @@ class FrustumGridGenerator(nn.Module):
         V_G = grid_to_lidar  # Voxel Grid -> LiDAR (4, 4)
         C_V = lidar_to_cam  # LiDAR -> Camera (B, 4, 4)
         I_C = cam_to_img  # Camera -> Image (B, 3, 4)
-        trans = C_V @ V_G
+        trans = C_V @ V_G #* Voxel Grid -> Camera
 
         # Reshape to match dimensions
         trans = trans.reshape(B, 1, 1, 4, 4)
-        voxel_grid = voxel_grid.repeat_interleave(repeats=B, dim=0)
+        voxel_grid = voxel_grid.repeat_interleave(repeats=B, dim=0) #* 在batch_size维度进行重复
 
         # Transform to camera frame
-        camera_grid = transform_points(trans_01=trans, points_1=voxel_grid)
+        camera_grid = transform_points(trans_01=trans, points_1=voxel_grid) #* 将LiDAR网格中的点投影到相机坐标系
 
         # Project to image
         I_C = I_C.reshape(B, 1, 1, 3, 4)
+        #* 将相机坐标系下的网格点坐标投影到图像坐标系下, 可以的到每个LiDAR网格的深度
         image_grid, image_depths = transform_utils.project_to_image(project=I_C, points=camera_grid)
 
         # Convert depths to depth bins
+        #* 将每个网格的深度转化成所在的bin的索引
         image_depths = transform_utils.bin_depths(depth_map=image_depths, **self.disc_cfg)
 
         # Stack to form frustum grid
         image_depths = image_depths.unsqueeze(-1)
+        #* frustum_grid就是划分的每个voxel投影到图像上的像素坐标和深度所在的bin, 尺寸为[batch_size, X轴上的网格数, Y轴上的网格数, Z轴上的网格数, 3]
         frustum_grid = torch.cat((image_grid, image_depths), dim=-1)
         return frustum_grid
 
@@ -124,7 +127,15 @@ class FrustumGridGenerator(nn.Module):
         Returns:
             frustum_grid (B, X, Y, Z, 3), Sampling grids for frustum features
         """
-
+        """
+        下面说的XYZ坐标系都是激光雷达坐标系
+        self.voxel_grid的尺寸为[1, X轴划分的网格数, Y轴划分的网格数, Z轴划分的网格数, 3], 3是存储每个轴上的索引
+        self.grid_to_lidar的尺寸为[4, 4], 存储的是从网格索引转化为LiDAR坐标系上的坐标的转换矩阵
+        lidar_to_cam的尺寸为[batch_size, 4, 4], 存储的是从LiDAR坐标系转化为相机坐标系的转换矩阵
+        cam_to_img的尺寸为[batch_size, 3, 4], 存储的是从相机坐标系转化为图像坐标系的转换矩阵
+        
+        frustum_grid就是划分的每个voxel投影到图像上的像素坐标和深度所在的bin, 尺寸为[batch_size, X轴上的网格数, Y轴上的网格数, Z轴上的网格数, 3]
+        """
         frustum_grid = self.transform_grid(voxel_grid=self.voxel_grid.to(lidar_to_cam.device),
                                            grid_to_lidar=self.grid_to_lidar.to(lidar_to_cam.device),
                                            lidar_to_cam=lidar_to_cam,
@@ -139,6 +150,7 @@ class FrustumGridGenerator(nn.Module):
         frustum_grid = transform_utils.normalize_coords(coords=frustum_grid, shape=frustum_shape)
 
         # Replace any NaNs or infinites with out of bounds
+        #* 深度超过范围的情况深度会变成-2
         mask = ~torch.isfinite(frustum_grid)
         frustum_grid[mask] = self.out_of_bounds_val
 

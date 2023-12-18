@@ -205,6 +205,12 @@ class DatasetTemplate(torch_data.Dataset):
         if data_dict.get('points', None) is not None:
             data_dict = self.point_feature_encoder.forward(data_dict)
 
+        """
+            CaDDN的数据预处理操作:
+                1. 过滤中心点在检测范围外的物体
+                2. 根据检测范围和voxel size计算grid size(用点云范围除voxel大小)
+                3. 对深度图进行下采样, 深度图原来的大小是W * H, 下采样后变为W/4 * H/4, 如果不能整除, 会对边缘填充0, 每个位置都是原先4*4的区域的均值
+        """
         data_dict = self.data_processor.forward(
             data_dict=data_dict
         )

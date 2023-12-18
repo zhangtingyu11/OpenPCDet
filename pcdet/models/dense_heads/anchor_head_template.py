@@ -93,6 +93,10 @@ class AnchorHeadTemplate(nn.Module):
         Returns:
 
         """
+        """
+        CaDDN在BEV视角下放置anchor, 每个类别每个位置放置2个, self.anchors为长度为3的列表
+        列表中的每个元素的尺寸为[1, Y轴网格数/2, X轴网格数/2, 1, 2, 7]
+        """
         targets_dict = self.target_assigner.assign_targets(
             self.anchors, gt_boxes
         )

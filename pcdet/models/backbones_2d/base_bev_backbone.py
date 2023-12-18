@@ -89,6 +89,24 @@ class BaseBEVBackbone(nn.Module):
         ups = []
         ret_dict = {}
         x = spatial_features
+        """
+        对于CaDDN来说, 包含3个block和3个deblock, 输入的特征图的尺寸为[batch_size, 64, Y方向的网格数, X方向的网格数]
+        Block0: 
+            先在特征图的四周填充0, 在进行3*3的步长为2的卷积(64->64), BN2D, ReLU
+            进行3*3的步长为1, padding为1的卷积(64->64), BN2D, ReLU  (重复10次)
+        Deblock0:
+            进行1*1的步长为1的转置卷积(64->128), BN2D, ReLU
+        Block1:
+            先在特征图的四周填充0, 在进行3*3的步长为2的卷积(64->128), BN2D, ReLU
+            进行3*3的步长为1, padding为1的卷积(128->128), BN2D, ReLU  (重复10次)
+        Deblock1:
+            进行2*2的步长为2的转置卷积(128->128), BN2D, ReLU
+        Block2:
+            先在特征图的四周填充0, 在进行3*3的步长为2的卷积(128->256), BN2D, ReLU
+            进行3*3的步长为1, padding为1的卷积(256->256), BN2D, ReLU  (重复10次)
+        Deblock2:
+            进行4*4的步长为4的转置卷积(256->128), BN2D, ReLU
+        """
         for i in range(len(self.blocks)):
             x = self.blocks[i](x)
 
@@ -99,6 +117,7 @@ class BaseBEVBackbone(nn.Module):
             else:
                 ups.append(x)
 
+        #* CaDDN: 将Deblock的结果进行拼接, 得到尺寸为[2, 384, Y方向的网格数/2, X方向的网格数/2]
         if len(ups) > 1:
             x = torch.cat(ups, dim=1)
         elif len(ups) == 1:

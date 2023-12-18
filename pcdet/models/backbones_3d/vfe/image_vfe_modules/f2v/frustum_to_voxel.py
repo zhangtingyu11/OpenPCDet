@@ -40,15 +40,22 @@ class FrustumToVoxel(nn.Module):
                 voxel_features: (B, C, Z, Y, X), Image voxel features
         """
         # Generate sampling grid for frustum volume
+        #* 将点云的voxel投影到图像坐标系下, 获取对应的像素坐标和深度, 然后将在图像范围内的点的像素值映射到[-1, 1], 不在深度范围内的点的深度设置为-2
         grid = self.grid_generator(lidar_to_cam=batch_dict["trans_lidar_to_cam"],
                                    cam_to_img=batch_dict["trans_cam_to_img"],
                                    image_shape=batch_dict["image_shape"])  # (B, X, Y, Z, 3)
 
         # Sample frustum volume to generate voxel volume
+        """
+        这个采样使用的是torch.nn.functional.grid_sample
+        里面的grid的坐标必须在[-1, 1]以内, 如果不在其中, 就用0进行填充, 采用双线性插值来进行采样
+        具体可以参考https://pytorch.org/docs/stable/generated/torch.nn.functional.grid_sample.html
+        """
         voxel_features = self.sampler(input_features=batch_dict["frustum_features"],
                                       grid=grid)  # (B, C, X, Y, Z)
 
         # (B, C, X, Y, Z) -> (B, C, Z, Y, X)
+        #* 通过预测的深度获得了voxel特征, 尺寸为[batch_size, C, Z轴的网格数, Y轴的网格数, X轴的网格数]
         voxel_features = voxel_features.permute(0, 1, 4, 3, 2)
         batch_dict["voxel_features"] = voxel_features
         return batch_dict
