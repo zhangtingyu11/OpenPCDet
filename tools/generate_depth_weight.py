@@ -1,9 +1,8 @@
 import pickle
-from PIL import Image
 import numpy as np
-import torch
 import imageio
 from pathlib import Path
+from tqdm import tqdm
 
 def gaussian2D(shape, sigma=1):
     m, n = [(ss - 1.) / 2. for ss in shape]
@@ -38,7 +37,7 @@ def draw_gaussian_to_heatmap(heatmap, center, radius, k=1, valid_mask=None):
     return heatmap
 
 class DepthWeightGenerator:
-    def __init__(self, pickle_file, class_names=['Car', 'Pedestrian', 'Cyclist'], radius = 10, data_root = None):
+    def __init__(self, pickle_file, class_names=['Car', 'Pedestrian', 'Cyclist'], radius = 30, data_root = None):
         with open(pickle_file, 'rb') as f:
             data = pickle.load(f)
             self.data = {}
@@ -62,10 +61,10 @@ class DepthWeightGenerator:
             centers_2d.append([int(center_x), int(center_y)])
         return centers_2d
     
-    def generate_depth_weight(self, frame_id):
+    def generate_depth_weight(self, frame_id, minimum_heat = 0.2):
         centers_2d = self.get_centers_2d(frame_id)
         h, w = self.data[frame_id]["image"]["image_shape"]
-        depth_weight = np.zeros([h, w])
+        depth_weight = np.zeros([h, w])+minimum_heat
         for x, y in centers_2d:
             depth_weight = draw_gaussian_to_heatmap(depth_weight, [x, y], self.radius)
         save_path = self.data_root / (str(frame_id).zfill(6) + '.png')
@@ -73,12 +72,12 @@ class DepthWeightGenerator:
         
     
     def generate_all_depth_weight(self):
-        for frame_id in self.data:
+        for frame_id in tqdm(self.data.keys(), desc="Processing", unit="item"):
             self.generate_depth_weight(frame_id)
     
 if __name__ == "__main__":
-    dwg = DepthWeightGenerator('/home/zty/Project/DeepLearning/OpenPCDet/data/kitti/kitti_infos_train.pkl',
-                               data_root='/home/zty/Project/DeepLearning/OpenPCDet/data/kitti/training/depth_weight')
+    dwg = DepthWeightGenerator('/home/public/zty/Project/DeepLearningProject/OpenPCDet/data/kitti/kitti_infos_train.pkl',
+                               data_root='/home/public/zty/Project/DeepLearningProject/OpenPCDet/data/kitti/training/depth_weight')
     dwg.generate_all_depth_weight()
     
     
