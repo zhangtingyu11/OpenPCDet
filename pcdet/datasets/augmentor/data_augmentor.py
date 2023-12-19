@@ -118,17 +118,19 @@ class DataAugmentor(object):
             return partial(self.random_image_flip, config=config)
         images = data_dict["images"]
         depth_maps = data_dict["depth_maps"]
+        depth_weight = data_dict["depth_weight"]
         gt_boxes = data_dict['gt_boxes']
         gt_boxes2d = data_dict["gt_boxes2d"]
         calib = data_dict["calib"]
         for cur_axis in config['ALONG_AXIS_LIST']:
             assert cur_axis in ['horizontal']
-            images, depth_maps, gt_boxes = getattr(augmentor_utils, 'random_image_flip_%s' % cur_axis)(
-                images, depth_maps, gt_boxes, calib,
+            images, depth_maps, depth_weight, gt_boxes = getattr(augmentor_utils, 'random_image_flip_%s' % cur_axis)(
+                images, depth_maps, depth_weight, gt_boxes, calib,
             )
 
         data_dict['images'] = images
         data_dict['depth_maps'] = depth_maps
+        data_dict['depth_weight'] = depth_weight
         data_dict['gt_boxes'] = gt_boxes
         return data_dict
 

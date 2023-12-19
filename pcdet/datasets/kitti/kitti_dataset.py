@@ -104,6 +104,21 @@ class KittiDataset(DatasetTemplate):
         depth = depth.astype(np.float32)
         depth /= 256.0
         return depth
+    
+    def get_depth_weight(self, idx):
+        """
+        Loads depth map for a sample
+        Args:
+            idx: str, Sample index
+        Returns:
+            depth: (H, W), Depth map
+        """
+        depth_weight_file = self.root_split_path / 'depth_weight' / ('%s.png' % idx)
+        assert depth_weight_file.exists()
+        depth_weight = io.imread(depth_weight_file)
+        depth_weight = depth_weight.astype(np.float32)
+        depth_weight /= 65535.0
+        return depth_weight
 
     def get_calib(self, idx):
         calib_file = self.root_split_path / 'calib' / ('%s.txt' % idx)
@@ -419,6 +434,10 @@ class KittiDataset(DatasetTemplate):
         if "depth_maps" in get_item_list:
             #* 获取预先设置好的深度图, 深度图用0~65535的数来存, 除256就是深度
             input_dict['depth_maps'] = self.get_depth_map(sample_idx)
+        
+        if "depth_weight" in get_item_list:
+            input_dict['depth_weight'] = self.get_depth_weight(sample_idx)
+
 
         if "calib_matricies" in get_item_list:
             """

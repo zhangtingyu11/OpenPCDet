@@ -110,7 +110,7 @@ def global_scaling_with_roi_boxes(gt_boxes, roi_boxes, points, scale_range, retu
     return gt_boxes, roi_boxes, points
 
 
-def random_image_flip_horizontal(image, depth_map, gt_boxes, calib):
+def random_image_flip_horizontal(image, depth_map, depth_weight, gt_boxes, calib):
     """
     Performs random horizontal flip augmentation
     Args:
@@ -130,6 +130,8 @@ def random_image_flip_horizontal(image, depth_map, gt_boxes, calib):
         # Flip images
         aug_image = np.fliplr(image)
         aug_depth_map = np.fliplr(depth_map)
+        aug_depth_weight = np.fliplr(depth_weight)
+        
         
         # Flip 3D gt_boxes by flipping the centroids in image space
         aug_gt_boxes = copy.copy(gt_boxes)
@@ -145,9 +147,10 @@ def random_image_flip_horizontal(image, depth_map, gt_boxes, calib):
     else:
         aug_image = image
         aug_depth_map = depth_map
+        aug_depth_weight = depth_weight
         aug_gt_boxes = gt_boxes
 
-    return aug_image, aug_depth_map, aug_gt_boxes
+    return aug_image, aug_depth_map, aug_depth_weight, aug_gt_boxes
 
 
 def random_local_translation_along_x(gt_boxes, points, offset_range):

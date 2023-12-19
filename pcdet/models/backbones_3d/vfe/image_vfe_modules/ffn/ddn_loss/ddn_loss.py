@@ -81,8 +81,6 @@ class WeightedDDNLoss(nn.Module):
                  alpha,
                  gamma,
                  disc_cfg,
-                 fg_weight,
-                 bg_weight,
                  downsample_factor):
         """
         Initializes DDNLoss module
@@ -98,9 +96,6 @@ class WeightedDDNLoss(nn.Module):
         super().__init__()
         self.device = torch.cuda.current_device()
         self.disc_cfg = disc_cfg
-        self.balancer = Balancer(downsample_factor=downsample_factor,
-                                 fg_weight=fg_weight,
-                                 bg_weight=bg_weight)
 
         # Set loss function
         self.alpha = alpha
@@ -131,7 +126,7 @@ class WeightedDDNLoss(nn.Module):
         # loss, tb_dict = self.balancer(loss=loss, gt_boxes2d=gt_boxes2d)
 
         # Final loss
-        loss *= self.weight
+        loss = loss.sum()/depth_weight.numel()*self.weight
         tb_dict.update({"weighted_ddn_loss": loss.item()})
 
         return loss, tb_dict

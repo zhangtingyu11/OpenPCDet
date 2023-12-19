@@ -229,6 +229,17 @@ class DataProcessor(object):
             factors=(self.depth_downsample_factor, self.depth_downsample_factor)
         )
         return data_dict
+
+    def downsample_depth_weight(self, data_dict=None, config=None):
+        if data_dict is None:
+            self.depth_downsample_factor = config.DOWNSAMPLE_FACTOR
+            return partial(self.downsample_depth_weight, config=config)
+
+        data_dict['depth_weight'] = transform.downscale_local_mean(
+            image=data_dict['depth_weight'],
+            factors=(self.depth_downsample_factor, self.depth_downsample_factor)
+        )
+        return data_dict
     
     def image_normalize(self, data_dict=None, config=None):
         if data_dict is None:

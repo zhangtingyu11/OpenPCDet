@@ -16,6 +16,28 @@
                 "--cfg_file",
                 "cfgs/kitti_models/CaDDN.yaml",
             ]
+        },
+        {
+            "name": "train weighted CaDDN ",
+            "type": "python",
+            "request": "launch",
+            "cwd":"${workspaceFolder}/tools",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--cfg_file",
+                "cfgs/kitti_models/CaDDN_weight.yaml",
+            ]
+        },
+        {
+            "name": "generate depth weight",
+            "type": "python",
+            "request": "launch",
+            "cwd":"${workspaceFolder}/tools",
+            "program": "generate_depth_weight.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
         }
     ]
 }

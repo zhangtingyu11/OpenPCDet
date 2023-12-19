@@ -70,9 +70,15 @@ class DepthFFN(nn.Module):
         batch_dict["frustum_features"] = frustum_features
 
         if self.training:
-            self.forward_ret_dict["depth_maps"] = batch_dict["depth_maps"]  #* 深度图的标签
-            self.forward_ret_dict["gt_boxes2d"] = batch_dict["gt_boxes2d"]  #* 2D包围框的标签
-            self.forward_ret_dict["depth_logits"] = depth_logits
+            if isinstance(self.ddn_loss, ddn_loss.DDNLoss):
+                self.forward_ret_dict["depth_maps"] = batch_dict["depth_maps"]  #* 深度图的标签
+                self.forward_ret_dict["gt_boxes2d"] = batch_dict["gt_boxes2d"]  #* 2D包围框的标签
+                self.forward_ret_dict["depth_logits"] = depth_logits
+            elif isinstance(self.ddn_loss, ddn_loss.WeightedDDNLoss):
+                self.forward_ret_dict["depth_maps"] = batch_dict["depth_maps"]  #* 深度图的标签
+                self.forward_ret_dict["depth_logits"] = depth_logits
+                self.forward_ret_dict["depth_weight"] = batch_dict["depth_weight"].unsqueeze(1)
+                
         return batch_dict
 
     def create_frustum_features(self, image_features, depth_logits):
