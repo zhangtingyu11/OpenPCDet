@@ -60,13 +60,26 @@
             "program": "train.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "env": {
-                // "LD_LIBRARY_PATH":"$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
-                // "CUDA_VISIBLE_DEVICES":"1",
-            },
             "args": [
                 "--cfg_file",
                 "cfgs/kitti_models/voxel_rcnn_car.yaml",
+            ]
+        },
+        {
+            "name": "Test voxel rcnn",
+            "type": "python",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/tools",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--cfg_file",
+                "cfgs/kitti_models/voxel_rcnn_car.yaml",
+                "--batch_size",
+                "1",
+                "--ckpt",
+                "../output/kitti_models/voxel_rcnn_car/origin_seed6811/ckpt/checkpoint_epoch_80.pth"
             ]
         },
         {
@@ -77,53 +90,13 @@
             "program": "train.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "env": {
-                // "LD_LIBRARY_PATH":"$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
-                // "CUDA_VISIBLE_DEVICES":"1",
-            },
             "args": [
                 "--cfg_file",
                 "cfgs/kitti_models/second_car_clocs_contra_fusion_aug.yaml",
                 "--pretrained_model",
-                "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth",
+                "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_71.pth",
                 "--fix_random_seed",
                 "666",
-            ]
-        },
-        {
-            "name": "Train clocs contra",
-            "type": "python",
-            "request": "launch",
-            "cwd": "${workspaceFolder}/tools",
-            "program": "train.py",
-            "console": "integratedTerminal",
-            "justMyCode": true,
-            "args": [
-                "--cfg_file",
-                "cfgs/kitti_models/second_car_clocs_contra.yaml",
-                "--pretrained_model",
-                "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth",
-                // "--extra_tag",
-                // "decrease_channel"
-            ]
-        },
-        {
-            "name": "Train pillar clocs",
-            "type": "python",
-            "request": "launch",
-            "cwd": "${workspaceFolder}/tools",
-            "program": "train.py",
-            "console": "integratedTerminal",
-            "justMyCode": true,
-            "env": {
-                "LD_LIBRARY_PATH": "$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
-                "CUDA_VISIBLE_DEVICES": "1",
-            },
-            "args": [
-                "--cfg_file",
-                "cfgs/kitti_models/pointpillar_car_clocs.yaml",
-                "--pretrained_model",
-                "../output/kitti_models/pointpillar_car/origin/ckpt/checkpoint_epoch_80.pth",
             ]
         },
         {
@@ -134,17 +107,13 @@
             "program": "test.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "env": {
-                "LD_LIBRARY_PATH": "$LD_LIBRARY_PATH:/usr/local/cuda-11.8/lib64",
-                "CUDA_VISIBLE_DEVICES": "1",
-            },
             "args": [
                 "--cfg_file",
                 "../output/kitti_models/second_car/origin/second_car.yaml",
                 "--batch_size",
-                "16",
+                "1",
                 "--ckpt",
-                "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth"
+                "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_71.pth"
             ]
         },
         {
@@ -161,7 +130,7 @@
                 "--batch_size",
                 "1",
                 "--ckpt",
-                "../output/kitti_models/second_car_clocs_contra_fusion_aug/use_cl_mgs_epoch10/ckpt/checkpoint_epoch_7.pth"
+                "../output/kitti_models/second_car_clocs_contra_fusion_aug/batchsize8_weightinit_no_grad_norm_epoch1_voxelrcnn_strategy/ckpt/checkpoint_epoch_1.pth"
             ]
         },
         {
