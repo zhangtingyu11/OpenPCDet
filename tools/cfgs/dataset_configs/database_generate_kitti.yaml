@@ -12,7 +12,7 @@ DB_INFO_PATH: "./data/kitti/image_database_train.pkl"
 OPENPCDET_INFO_PATH: "./data/kitti/kitti_dbinfos_train.pkl"
 
 #* 数据来源, 支持"SAM"和"KINS"
-DATA_SOURCE: "KINS"
+DATA_SOURCE: "SAM"
 
 #* KINS数据集标注文件的地址
 KINS_JSON_PATH: "/home/zty/Project/DeepLearning/Amodal-Instance-Segmentation-through-KINS-Dataset/instances_train.json"
