@@ -4,7 +4,7 @@ import random
 
 SECOND_CLOCS_CONTRA_FUSION_AUG_FILE = "/home/zty/Project/DeepLearning/OpenPCDet/tools/cfgs/kitti_models/second_car_clocs_contra_fusion_aug.yaml"
 SECOND_CLOCS_FILE = "/home/zty/Project/DeepLearning/OpenPCDet/tools/cfgs/kitti_models/second_car_clocs.yaml"
-SECOND_PRETRAINED_MODEL = "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_80.pth"
+SECOND_PRETRAINED_MODEL = "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_71.pth"
 SECOND_CLOCS_CONTRA_FUSION_AUG_FILE_RELATIVE = "cfgs/kitti_models/second_car_clocs_contra_fusion_aug.yaml"
 
 def change_config_file(config_file, line_idx, change_component, need_comma=False):
@@ -67,12 +67,16 @@ def influence_of_detector2d():
 def choose_contra_weight():
     """测试不同的对比学习loss权重
     """
-    contra_weights = ['0.001', '0.01', '0.1', '0.2', '0.3,', '0.4', '0.5', '0.6', '0.7', '0.8', '1.0']
-    line_idx = 149
+    cls_weights = ['0.001', '0.01', '0.1', '0.2', '0.3,', '0.4', '0.5', '0.6', '0.7', '0.8', '1.0', '1.5', '2.0']
+    contra_weights = ['0.001', '0.01', '0.1', '0.2', '0.3,', '0.4', '0.5', '0.6', '0.7', '0.8', '1.0', '1.5', '2.0']
+    contra_line_idx = 151
+    cls_line_idx = 150
     for contra_weight in contra_weights:
-        change_config_file(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE, line_idx, contra_weight, need_comma=True)
-        extra_tag = "origin_contraweight{}".format(contra_weight)
-        auto_train_command(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE_RELATIVE, 666, extra_tag, SECOND_PRETRAINED_MODEL)
+        for cls_weight in cls_weights:
+            change_config_file(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE, contra_line_idx, contra_weight, need_comma=True)
+            change_config_file(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE, cls_line_idx, cls_weight, need_comma=True)
+            extra_tag = "add_exp/use_all_contra_weight{}_cls_weight{}".format(contra_weight, cls_weight)
+            auto_train_command(SECOND_CLOCS_CONTRA_FUSION_AUG_FILE_RELATIVE, 666, extra_tag, SECOND_PRETRAINED_MODEL)
 
 def choose_pos_neg_thresh():
     """测试不同的pos neg阈值
@@ -128,4 +132,4 @@ def train_with_and_wo_aug():
 
 if __name__=="__main__":
     # choose_contra_weight()
-    train_with_and_wo_aug()
+    choose_contra_weight()

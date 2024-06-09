@@ -2,7 +2,7 @@ import numpy as np
 import torch.nn as nn
 from ...utils.box_utils import boxes3d_lidar_to_kitti_camera, lidar_boxes_to_image_kitti_torch_cuda
 from ...ops.clocs.clocs_utils import compute_clocs_iou_sparse
-from ...ops.clocs.clocs_utils import cos_similarity
+from ...ops.clocs.clocs_utils import CustomCosineSimilarity
 from ..dense_heads.anchor_head_template import AnchorHeadTemplate
 from ...utils import loss_utils
 import torch.nn.functional as F
@@ -19,7 +19,15 @@ def _sigmoid_cross_entropy_with_logits(logits, labels):
   loss_mask = loss_mask.type(torch.FloatTensor).cuda()
   loss = loss*loss_mask
   return loss
-
+def sim_matrix(a, b, eps=1e-8):
+    """
+    added eps for numerical stability
+    """
+    a_n, b_n = a.norm(dim=1)[:, None], b.norm(dim=1)[:, None]
+    a_norm = a / torch.clamp(a_n, min=eps)
+    b_norm = b / torch.clamp(b_n, min=eps)
+    sim_mt = torch.mm(a_norm, b_norm.transpose(0, 1))
+    return sim_mt
 def indices_to_dense_vector(indices,
                             size,
                             indices_value=1.,
@@ -299,21 +307,30 @@ class ClocsSECONDHead(AnchorHeadTemplate):
               lidar_pred_normalized[:, 0]/=70.4
               lidar_pred_normalized[:, 1]/=80
               lidar_pred_normalized[:, 2]/=4
-              lidar_data = torch.cat([lidar_pred_normalized, scores_3d], dim=-1).permute(0, 1).reshape(1, -1, preds.shape[1], 1)
-              image_data = box_2d_detector_normalized.permute(0, 1).reshape(1, -1, 1, boxes2d_by_detector.shape[1])
-              lidar_features = self.lidar_extractor(lidar_data).squeeze(0)
-              image_features = self.image_extractor(image_data).squeeze(0)
-              lidar_features = lidar_features.squeeze().transpose(0, 1).unsqueeze(1).contiguous()
-              image_features = image_features.squeeze().transpose(0, 1).unsqueeze(0).contiguous()
-              lidar_num = lidar_features.shape[0]
-              image_num = image_features.shape[1]
-              feature_dim = image_features.shape[-1]
-              lidar_feature_expanded = lidar_features.expand(lidar_num, image_num, feature_dim)
-              image_feature_expanded = image_features.expand(lidar_num, image_num, feature_dim) 
-              lidar_feature_expanded_list.append(lidar_feature_expanded.view(1, *lidar_feature_expanded.shape))
-              image_feature_expanded_list.append(image_feature_expanded.view(1, *image_feature_expanded.shape))
-              sim_feature = torch.zeros(lidar_num, image_num, device = 0)
-              cos_similarity(lidar_features, image_features, sim_feature)
+              lidar_data = torch.cat([lidar_pred_normalized, scores_3d], dim=-1).transpose(0, 1).unsqueeze(0).unsqueeze(-1)
+              image_data = box_2d_detector_normalized.transpose(0, 1).unsqueeze(0).unsqueeze(-1)
+              lidar_features_raw = self.lidar_extractor(lidar_data)
+              image_features_raw = self.image_extractor(image_data)
+              # lidar_features = lidar_features_raw.squeeze().transpose(0, 1).unsqueeze(1).contiguous()
+              # image_features = image_features_raw.squeeze().transpose(0, 1).unsqueeze(0).contiguous()
+              lidar_num = lidar_features_raw.shape[2]
+              image_num = image_features_raw.shape[2]
+              feature_dim = image_features_raw.shape[1]
+              # lidar_feature_expanded = lidar_features.expand(lidar_num, image_num, feature_dim)
+              # image_feature_expanded = image_features.expand(lidar_num, image_num, feature_dim) 
+              # lidar_feature_expanded_list.append(lidar_feature_expanded.view(1, *lidar_feature_expanded.shape))
+              # image_feature_expanded_list.append(image_feature_expanded.view(1, *image_feature_expanded.shape))
+              # sim_feature = torch.zeros(lidar_num, image_num, device = 0)
+              # TODO 检查反向传播
+              # sim_feature = CustomCosineSimilarity.apply(lidar_features_raw.transpose(0, 1).contiguous(), image_features_raw.squeeze(1).transpose(0, 1).contiguous())
+              if not self.training:
+                sim_feature = CustomCosineSimilarity.apply(lidar_features_raw.squeeze().transpose(0, 1).contiguous(), image_features_raw.squeeze().transpose(0, 1).contiguous())
+              else:
+                sim_feature = sim_matrix(lidar_features_raw.squeeze().transpose(0, 1).contiguous(), image_features_raw.squeeze().transpose(0, 1).contiguous())
+              
+              # sim_feature = sim_matrix(lidar_features_raw.squeeze().transpose(0, 1).contiguous(), image_features_raw.squeeze().transpose(0, 1).contiguous())
+              self.forward_ret_dict["cos_sim"] = sim_feature
+              # cos_similarity(lidar_features, image_features, sim_feature)
               sim_feature = sim_feature[None, None, :, :]
               # sim_feature = F.cosine_similarity(lidar_feature_expanded, image_feature_expanded, -1)[None, None, :, :]
               input_features = torch.cat([input_features, sim_feature], dim=1)
@@ -332,8 +349,8 @@ class ClocsSECONDHead(AnchorHeadTemplate):
             cls_pred_list.append(output)
         cls_preds = torch.cat(cls_pred_list, dim=0)
         if self.model_cfg.USE_CONTRA:
-          self.forward_ret_dict['lidar_features_expanded'] = torch.cat(lidar_feature_expanded_list, dim=0)
-          self.forward_ret_dict['image_features_expanded'] = torch.cat(image_feature_expanded_list, dim=0)
+          # self.forward_ret_dict['lidar_features_expanded'] = torch.cat(lidar_feature_expanded_list, dim=0)
+          # self.forward_ret_dict['image_features_expanded'] = torch.cat(image_feature_expanded_list, dim=0)
 
           #* iou大于阈值的位置
           iou_mask = ious[:, 0:1, :, :] > self.model_cfg.CONTRA_MATCH_IOU
@@ -458,10 +475,11 @@ class ClocsSECONDHead(AnchorHeadTemplate):
         return cls_loss, tb_dict
 
     def get_contra_loss(self):
-        lidar_feature_expanded = self.forward_ret_dict['lidar_features_expanded']
-        image_feature_expanded = self.forward_ret_dict['image_features_expanded']
+        # lidar_feature_expanded = self.forward_ret_dict['lidar_features_expanded']
+        # image_feature_expanded = self.forward_ret_dict['image_features_expanded']
         contra_label = self.forward_ret_dict['contrastive_label'].squeeze().int()
-        contra_loss = self.contra_loss_func(lidar_feature_expanded, image_feature_expanded, contra_label)
+        cos_sim = self.forward_ret_dict['cos_sim']
+        contra_loss = self.contra_loss_func(contra_label, cos_sim)
         contra_loss = contra_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['contra_weight']
         tb_dict = {
             'contra_loss': contra_loss

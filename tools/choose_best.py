@@ -35,4 +35,4 @@ def tranverse(dirname, suff = ".log"):
     return paths
 
 if __name__ == '__main__':
-    print(choose_best_KITTI_CAR('/home/zty/Project/DeepLearning/OpenPCDet/output/kitti_models/second_car_clocs_contra_fusion_aug/use_la_cl_epoch10'))
+    print(choose_best_KITTI_CAR('/home/zty/Project/DeepLearning/OpenPCDet/output/kitti_models/second_car_clocs_contra_fusion_aug/add_exp'))

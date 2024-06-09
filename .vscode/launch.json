@@ -84,7 +84,7 @@
         },
         {
             "name": "Train second clocs contra fusion aug",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "cwd": "${workspaceFolder}/tools",
             "program": "train.py",
@@ -97,7 +97,8 @@
                 "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_71.pth",
                 "--fix_random_seed",
                 "666",
-            ]
+            ],
+            ""
         },
         {
             "name": "Test second",
@@ -117,7 +118,7 @@
             ]
         },
         {
-            "name": "Test C-CLOCs",
+            "name": "Test SECOND C-CLOCs",
             "type": "python",
             "request": "launch",
             "cwd": "${workspaceFolder}/tools",
@@ -130,7 +131,58 @@
                 "--batch_size",
                 "1",
                 "--ckpt",
-                "../output/kitti_models/second_car_clocs_contra_fusion_aug/batchsize8_weightinit_no_grad_norm_epoch1_voxelrcnn_strategy/ckpt/checkpoint_epoch_1.pth"
+                "/home/zty/Project/DeepLearning/OpenPCDet/output/kitti_models/second_car_clocs_contra_fusion_aug/use_all_with_resblock/ckpt/checkpoint_epoch_10.pth"
+            ]
+        },
+        {
+            "name": "Test Voxel C-CLOCs",
+            "type": "python",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/tools",
+            "program": "test.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--cfg_file",
+                "/home/zty/Project/DeepLearning/OpenPCDet/tools/cfgs/kitti_models/voxel_rcnn_car_clocs_fusion_aug.yaml",
+                "--batch_size",
+                "1",
+                "--ckpt",
+                "/home/zty/Project/DeepLearning/OpenPCDet/output/kitti_models/voxel_rcnn_car_clocs_fusion_aug/default/ckpt/checkpoint_epoch_1.pth"
+            ]
+        },
+        {
+            "name": "Test Voxel CLOCs",
+            "type": "python",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/tools",
+            "program": "test.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--cfg_file",
+                "/home/zty/Project/DeepLearning/OpenPCDet/tools/cfgs/kitti_models/voxel_rcnn_car_clocs.yaml",
+                "--batch_size",
+                "1",
+                "--ckpt",
+                "/home/zty/Project/DeepLearning/OpenPCDet/output/kitti_models/voxel_rcnn_car_clocs/default/ckpt/checkpoint_epoch_1.pth"
+            ]
+        },
+        {
+            "name": "Test SECOND_CLOCs",
+            "type": "python",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/tools",
+            "program": "test.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--cfg_file",
+                "/home/zty/Project/DeepLearning/OpenPCDet/tools/cfgs/kitti_models/second_car_clocs.yaml",
+                "--batch_size",
+                "1",
+                "--ckpt",
+                "/home/zty/Project/DeepLearning/OpenPCDet/output/kitti_models/second_car_clocs/origin/ckpt/checkpoint_epoch_1.pth"
             ]
         },
         {

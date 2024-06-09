@@ -612,8 +612,11 @@ class CosineContrastiveLoss(nn.Module):
         super(CosineContrastiveLoss, self).__init__()
         self.margin = margin
 
-    def forward(self, output1, output2, label):
-        cos_sim = F.cosine_similarity(output1, output2, -1)
-        loss_cos_con = torch.mean((label) * torch.div(torch.pow((1.0-cos_sim), 2), 4) +
-                                    (1-label) * torch.pow(cos_sim * torch.lt(cos_sim, self.margin), 2))
+    def forward(self, label, cos_sim):
+        # cos_sim = F.cosine_similarity(output1, output2, -1)
+        pos_cos_con = ((label) * torch.div(torch.pow((1.0-cos_sim), 2), 4)).sum() / label.sum()
+        neg_cos_con = ((1-label) * torch.pow(cos_sim * torch.lt(cos_sim, self.margin), 2)).sum() / (1-label).sum()
+        # loss_cos_con = torch.mean((label) * torch.div(torch.pow((1.0-cos_sim), 2), 4) +
+        #                             (1-label) * torch.pow(cos_sim * torch.lt(cos_sim, self.margin), 2))
+        loss_cos_con = pos_cos_con + neg_cos_con
         return loss_cos_con

@@ -21,7 +21,15 @@ def cls_type_to_id(cls_type):
         return -1
     return type_to_id[cls_type]
 
-
+# def draw_rectangle(origin_image, new_right, new_left, new_bottom, new_top, color = (0, 0, 255), alpha = 0.7):
+#     create = np.zeros((new_bottom-new_top, new_right-new_left, 3), dtype=np.uint8)
+#     create[:, :, 0] = color[0]
+#     create[:, :, 1] = color[1]
+#     create[:, :, 2] = color[2]
+#     img_add = cv2.addWeighted(origin_image[new_top:new_bottom, new_left:new_right, 0:3], alpha ,create, 1-alpha, 0)
+#     origin_image[new_top:new_bottom, new_left:new_right, 0:3] = img_add
+#     cv2.rectangle(origin_image, (new_left, new_top), (new_right, new_bottom), color = color, thickness=2)
+#     return origin_image
 class Object3d(object):
     def __init__(self, line):
         label = line.strip().split(' ')
@@ -183,8 +191,8 @@ class DataBaseSampler(object):
                 info for info in dinfos
                 if info['difficulty'] not in removed_difficulty
             ]
-            if self.logger is not None:
-                self.logger.info('Database filter by difficulty %s: %d => %d' % (key, pre_len, len(new_db_infos[key])))
+            # if self.logger is not None:
+            #     self.logger.info('Database filter by difficulty %s: %d => %d' % (key, pre_len, len(new_db_infos[key])))
         return new_db_infos
 
     def filter_by_min_points(self, db_infos, min_gt_points_list):
@@ -197,9 +205,9 @@ class DataBaseSampler(object):
                     if info['num_points_in_gt'] >= min_num:
                         filtered_infos.append(info)
 
-                if self.logger is not None:
-                    self.logger.info('Database filter by min points %s: %d => %d' %
-                                     (name, len(db_infos[name]), len(filtered_infos)))
+                # if self.logger is not None:
+                #     self.logger.info('Database filter by min points %s: %d => %d' %
+                #                      (name, len(db_infos[name]), len(filtered_infos)))
                 db_infos[name] = filtered_infos
 
         return db_infos
@@ -711,8 +719,8 @@ class DataFusionSampler(object):
                         if info['difficulty'] not in removed_difficulty:
                             filter_infos.append(info)
                     db_infos[key][i][j] = filter_infos
-                    if self.logger is not None:
-                        self.logger.info('Database filter by difficulty %s: %d => %d' % (key+"{}, {}".format(i, j), pre_len, len(db_infos[key][i][j])))
+                    # if self.logger is not None:
+                    #     self.logger.info('Database filter by difficulty %s: %d => %d' % (key+"{}, {}".format(i, j), pre_len, len(db_infos[key][i][j])))
         return db_infos
 
     def filter_by_min_points(self, db_infos, min_gt_points_list):
@@ -730,9 +738,9 @@ class DataFusionSampler(object):
                             if info['num_points_in_gt'] >= min_num:
                                 filtered_infos.append(info)
                         db_infos[name][i][j] = filtered_infos
-                        if self.logger is not None:
-                            self.logger.info('Database filter by min points %s: %d => %d' %
-                                            (name+"{},{}".format(i, j), pre_len, len(filtered_infos)))
+                        # if self.logger is not None:
+                        #     self.logger.info('Database filter by min points %s: %d => %d' %
+                        #                     (name+"{},{}".format(i, j), pre_len, len(filtered_infos)))
         return db_infos
     
     def filter_lidar_points(self, points=None, calib=None, road_planes=None):
@@ -812,9 +820,18 @@ class DataFusionSampler(object):
         points_2d[:,1] = np.clip(points_2d[:,1], a_min=0, a_max=image.shape[0]-1)
         points_2d = points_2d.astype(np.int_)
         cropped_images = [0]*len(paste_order)
+        # flag = False
         for _order in paste_order:
             _box2d = boxes2d[_order]
+            # if _box2d[2]-_box2d[0] > 200:
+            #     flag = True
+            # if flag:
+            #     cv2.imwrite("original_image.png", image)
+            # if flag:
+            #     cv2.imwrite("crop_feat.png", crop_feat[_order])
             added_image = cv2.resize(crop_feat[_order], (_box2d[2]-_box2d[0], _box2d[3]-_box2d[1]), interpolation=cv2.INTER_LINEAR)
+            # if flag:
+                # cv2.imwrite("resized_crop_feat.png", added_image)
             paste_image = copy.deepcopy((image[_box2d[1]:_box2d[3],_box2d[0]:_box2d[2]]))
             if(added_image.shape[2] == 4):
                 p_mask = added_image[:, :, 3]>0
@@ -823,6 +840,8 @@ class DataFusionSampler(object):
             paste_image[p_mask] = added_image[p_mask][:, :3]
             image[_box2d[1]:_box2d[3],_box2d[0]:_box2d[2]] = paste_image
             copy_image = cv2.GaussianBlur(image, (3, 3), 0)
+            # if flag:
+                # cv2.imwrite("blur_image.png", copy_image)
             #* 原图剪切下来的物体
             cropped_image = image[_box2d[1]:_box2d[3],_box2d[0]:_box2d[2], :]
             if _order >= gt_number:
@@ -830,6 +849,11 @@ class DataFusionSampler(object):
                 added_image = copy_image[_box2d[1]:_box2d[3],_box2d[0]:_box2d[2], :]
                 #* 原图的mask部分设置成模糊后的图的mask部分
                 cropped_image[p_mask] = added_image[p_mask]
+                # tranparent = np.zeros((cropped_image.shape[0], cropped_image.shape[1], 1), dtype = np.uint8)
+                # tranparent[p_mask] = 255
+                # concat_image = np.concatenate([cropped_image, tranparent], axis = -1)
+                # if flag:
+                    # cv2.imwrite("cropped_blur_image.png", concat_image)
             cropped_images[_order] = cropped_image
             # image[_box2d[1]:_box2d[3],_box2d[0]:_box2d[2], :] = cropped_image
             overlap_mask[_box2d[1]:_box2d[3],_box2d[0]:_box2d[2]][p_mask] += \
@@ -848,7 +872,11 @@ class DataFusionSampler(object):
             _box2d = boxes2d[_order]
             cropped_image = cropped_images[_order]
             image[_box2d[1]:_box2d[3],_box2d[0]:_box2d[2], :] = cropped_image
-            
+            # image = draw_rectangle(image, _box2d[2], _box2d[0], _box2d[3], _box2d[1])
+            # if flag:
+                # cv2.imwrite("final_image.png", image)
+                # exit(0)
+        
         data_dict['images'] = image
 
         # if not self.joint_sample:
