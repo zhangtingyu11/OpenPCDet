@@ -1,13 +1,15 @@
+Code will be released upon accepted
+
 # 实验环境
 CUDA 11.8
 Pytorch 2.0.1
-single RTX4090 or RTX3090*2
+single RTX4090
 Ubuntu 20.04
 MMDet 3.0.0
 
 1.拉取仓库
 ```
-git clone 
+git clone https://github.com/zhangtingyu11/C-CLOCs.git
 ```
 # Data Preparation
 2. 软链接kitti数据集
@@ -37,7 +39,8 @@ kitti数据集的目录结构如下
 创建weights文件夹，并下载权重文件([vit_h](https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth), [vit_l](https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth), [vit_b](https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth))到weights文件夹下
 运行generate_mask.py
 ```shell
-python tools/generate_masks.py
+python tools/generate_masks.py #KITTI
+python tools/generate_masks_nuscenes.py # nuscenes
 ```
 生成后的kitti数据集结构如下:
 ```
@@ -112,4 +115,27 @@ python -m pcdet.datasets.kitti.kitti_dataset create_kitti_infos tools/cfgs/datas
 借助mmdetection3d中的脚本生成coco数据
 ```python
 python -u tools/dataset_converters/nuimage_converter.py --data-root data/nuImages --version v1.0-train v1.0-val v1.0-mini --out-dir data/nuImages/coco
-``````
+```
+
+# 借助脚本训练2D目标检测器
+KITTI
+```shell
+cd tools
+python train_clocs.py
+```
+nuScenes
+```shell
+cd tools
+python train_clocs_nuscenes.py
+```
+
+# 训练
+需要先训练SECOND模型:
+```
+python train.py --cfg_file tools/cfgs/kitti_models/second_car.yaml
+```
+再训练C-CLOCs模型
+```
+cd tools
+python train.py --cfg_file tools/cfgs/kitti_models/second_car_clocs_contra_fusion_aug.yaml --pretrained_model ${second预训练模型的路径}
+```
