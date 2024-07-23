@@ -227,7 +227,7 @@ class SearchValidSpace:
         handles, labels = self.ax.get_legend_handles_labels()
         self.ax.legend(handles[::-1], labels[::-1], loc = 'lower right', fontsize=28)
         plt.savefig('augmented_lidar.png', bbox_inches='tight', dpi = self.fig.dpi, pad_inches=0.0)
-        plt.show()
+        # plt.show()
     
     def plot_valid_area(self):
         self.start_angle = 90-self.angle_limit
@@ -467,7 +467,7 @@ class SearchValidSpace:
                 bottom = ceil(bottom)
                 added_boxes_coor2d.append([left, top, right, bottom])
                 #! 画图备用
-                cv2.imwrite("before_resize.png", added_image_kins)
+                # cv2.imwrite("before_resize.png", added_image_kins)
                 #* 将添加的图片resize成这个尺寸
                 added_image = cv2.resize(added_image, (right-left, bottom-top), interpolation=cv2.INTER_LINEAR)
 
@@ -476,7 +476,7 @@ class SearchValidSpace:
                 #* resize KINS的mask
                 added_image_kins = cv2.resize(added_image_kins, (right-left, bottom-top), interpolation=cv2.INTER_LINEAR)
                 #! 画图备用
-                cv2.imwrite("after_resize.png", added_image_kins)
+                # cv2.imwrite("after_resize.png", added_image_kins)
                 
                 origin_image = self.paste_image_with_mask(origin_image.copy(), added_image, left, top, right, bottom)
                 origin_image_copy_kins = self.paste_image_with_mask(origin_image.copy(), added_image_kins, left, top, right, bottom)
@@ -505,8 +505,8 @@ class SearchValidSpace:
                 # cv2.rectangle(origin_image_copy_kins, (floor(new_top), floor(new_left)), (ceil(new_bottom), ceil(new_right)), color = (0, 255, 0), thickness=2)
                 
         cv2.imwrite('augmented_image.png', origin_image[:, :, :3])
-        cv2.imwrite('augmented_image_direct.png', origin_image_copy_direct[:, :, :3])
-        cv2.imwrite('augmented_image_kins.png', origin_image_copy_kins[:, :, :3])
+        # cv2.imwrite('augmented_image_direct.png', origin_image_copy_direct[:, :, :3])
+        # cv2.imwrite('augmented_image_kins.png', origin_image_copy_kins[:, :, :3])
         
         self.plot_lidar(points)
         self.add_boxes(origin_boxes_lidar_3d, origin_label_box_num)
@@ -530,16 +530,16 @@ class SearchValidSpace:
         
         copy_image = deepcopy(origin_image)
         #! 画图备用
-        cv2.imwrite("before_blur.png", copy_image)
+        # cv2.imwrite("before_blur.png", copy_image)
         copy_image = cv2.GaussianBlur(copy_image, (3, 3), 0)
         #! 画图备用
-        cv2.imwrite("after_blur.png", copy_image)
+        # cv2.imwrite("after_blur.png", copy_image)
         cropped_image = origin_image[top:bottom, left:right, :]
         added_image = copy_image[top:bottom, left:right, :]
         #! 画图备用
         added_image[:, :, 3] = 0
         added_image[alpha_mask, 3] = 255
-        cv2.imwrite("added_mask.png", added_image)
+        # cv2.imwrite("added_mask.png", added_image)
         cropped_image[alpha_mask] = added_image[alpha_mask]
         origin_image[top:bottom, left:right, :] = cropped_image
         return origin_image
