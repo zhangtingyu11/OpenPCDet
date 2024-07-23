@@ -232,6 +232,8 @@ class ClocsVoxelRCNNHead(AnchorHeadTemplate):
     def forward(self, data_dict):
         #* 读取3D目标检测的结果
         preds = data_dict['batch_box_preds']
+        data_dict['original_box_preds'] = data_dict['batch_box_preds'].clone()
+        data_dict['original_cls_preds'] = data_dict['batch_cls_preds'].clone()
         #* 将3D目标检测器的预测结果存进去， 后续计算loss需要使用
         self.forward_ret_dict['preds_3d'] = data_dict['batch_cls_preds']
         #* 转成0~1之间
@@ -272,25 +274,31 @@ class ClocsVoxelRCNNHead(AnchorHeadTemplate):
             boxes_3d_num = box_2d_preds.shape[0]
             overlap = torch.zeros((boxes_3d_num, boxes_2d_num, 4), dtype = box_2d_detector.dtype, device = box_2d_detector.device)-1
             #* 用[iou, 3D目标检测分数, 2D目标检测分数, 到LiDAR的距离来填充]
-            ious = compute_clocs_iou_sparse(box_2d_preds.contiguous(),
+            pair_info = compute_clocs_iou_sparse(box_2d_preds.contiguous(),
                                     box_2d_pos.contiguous(),
                                     scores_3d,
                                     scores_2d.contiguous(),
                                     dist_to_lidar_single,
                                     overlap)
 
-            ious = ious.permute(2, 0, 1).view(1, 4, boxes_3d_num, boxes_2d_num)
-            non_empty_mask = (ious[0, 0, :, :]!=-10).nonzero()
+            iou = pair_info[:, :, 0]
+            valid_box_2d_idxs = torch.argmax(iou, dim=1)
+            pair_info = pair_info[torch.arange(100), valid_box_2d_idxs, :]
+            zero_iou_mask = pair_info[:, 0] == 0
+            pair_info[zero_iou_mask, 2] = 0
+            
+            # ious = ious.permute(2, 0, 1).view(1, 4, boxes_3d_num, boxes_2d_num)
+            # non_empty_mask = (ious[0, 0, :, :]!=-10).nonzero()
             # if non_empty_mask.shape[0]==0:
             #   self.cal_loss_flag = False
             # else:
             #   self.cal_loss_flag = True
             
-            iou_condition = ious[0][0, :, :] > self.model_cfg.IOU_THRESH
-            #* 找到每个3D物体中满足条件的2D物体的最大置信度
-            max_confidences, _ = torch.max(torch.where(iou_condition, ious[0, 2, :, :], torch.zeros_like(ious[0, 2, :, :])), dim=1)
-            self.forward_ret_dict['3d_max_confidence'] = max_confidences
-            input_features = ious
+            # iou_condition = ious[0][0, :, :] > self.model_cfg.IOU_THRESH
+            # #* 找到每个3D物体中满足条件的2D物体的最大置信度
+            # max_confidences, _ = torch.max(torch.where(iou_condition, ious[0, 2, :, :], torch.zeros_like(ious[0, 2, :, :])), dim=1)
+            # self.forward_ret_dict['3d_max_confidence'] = max_confidences
+            # input_features = ious
 
             if self.model_cfg.USE_CONTRA:
               image_height, image_width = image_shape
@@ -325,16 +333,19 @@ class ClocsVoxelRCNNHead(AnchorHeadTemplate):
               input_features = torch.cat([input_features, sim_feature], dim=1)
 
             # if (self.cal_loss_flag):
-            non_empty_input_features = (input_features[:, :, non_empty_mask[:, 0], non_empty_mask[:, 1]]).unsqueeze(2)
-            new_res = self.fuse(non_empty_input_features)
-            res = torch.zeros((1, 1, boxes_3d_num, boxes_2d_num), dtype=torch.float32, device=0)-100
-            res[:, :, non_empty_mask[:, 0], non_empty_mask[:, 1]] = new_res.squeeze(2)
+            # non_empty_input_features = (input_features[:, :, non_empty_mask[:, 0], non_empty_mask[:, 1]]).unsqueeze(2)
+            # new_res = self.fuse(non_empty_input_features)
+            # res = torch.zeros((1, 1, boxes_3d_num, boxes_2d_num), dtype=torch.float32, device=0)-100
+            # res[:, :, non_empty_mask[:, 0], non_empty_mask[:, 1]] = new_res.squeeze(2)
             # else:
             # res = torch.zeros((1, 1, boxes_3d_num, boxes_2d_num)).type(torch.float32).cuda()-100
 
             #* 相当于maxpooling
-            output = torch.amax(res, dim = -1)
-            output = output.squeeze().view(1,-1,1)
+            # output = torch.amax(res, dim = -1)
+            # output = output.squeeze().view(1,-1,1)
+            pair_info = pair_info.transpose(0, 1).view(1, 4, 100, 1)
+            output = self.fuse(pair_info)
+            output = output.view(1, 100, 1)
             cls_pred_list.append(output)
         cls_preds = torch.cat(cls_pred_list, dim=0)
         if self.model_cfg.USE_CONTRA:

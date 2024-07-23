@@ -98,11 +98,27 @@
                 "--fix_random_seed",
                 "666",
             ],
-            ""
         },
         {
-            "name": "Test second",
-            "type": "python",
+            "name": "Train voxelrcnn clocs",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/tools",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--cfg_file",
+                "cfgs/kitti_models/voxel_rcnn_car_clocs.yaml",
+                "--pretrained_model",
+                "../output/kitti_models/voxel_rcnn_car/origin_seed6811/ckpt/checkpoint_epoch_80.pth",
+                "--fix_random_seed",
+                "666",
+            ],
+        },
+        {
+            "name": "Test voexlrcnn clocs",
+            "type": "debugpy",
             "request": "launch",
             "cwd": "${workspaceFolder}/tools",
             "program": "test.py",
@@ -110,11 +126,11 @@
             "justMyCode": true,
             "args": [
                 "--cfg_file",
-                "../output/kitti_models/second_car/origin/second_car.yaml",
+                "cfgs/kitti_models/voxel_rcnn_car_clocs.yaml",
                 "--batch_size",
                 "1",
                 "--ckpt",
-                "../output/kitti_models/second_car/origin/ckpt/checkpoint_epoch_71.pth"
+                "../output/kitti_models/voxel_rcnn_car_clocs/origin_epoch1_seed666/ckpt/latest_model.pth"
             ]
         },
         {

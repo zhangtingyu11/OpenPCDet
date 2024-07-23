@@ -46,14 +46,14 @@ __global__ void clocs_compute_iou_sparse_kernel(const int num_3d,
         }
         else{
             //* 填写-10主要是为了和iou接近于0的区别开
-            cur_overlap[0] = -10;
+            cur_overlap[0] = 0;
             cur_overlap[1] = scores_3d[boxes3d_idx];
             cur_overlap[2] = scores_2d[boxes2d_idx];
             cur_overlap[3] = dis_to_lidar_3d[boxes3d_idx];
         }
     }
     else{
-        cur_overlap[0] = -10;
+        cur_overlap[0] = 0;
         cur_overlap[1] = scores_3d[boxes3d_idx];
         cur_overlap[2] = scores_2d[boxes2d_idx];
         cur_overlap[3] = dis_to_lidar_3d[boxes3d_idx];

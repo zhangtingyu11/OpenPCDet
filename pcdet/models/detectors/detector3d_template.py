@@ -9,6 +9,7 @@ from .. import backbones_2d, backbones_3d, dense_heads, roi_heads, fusion_heads,
 from ..backbones_2d import map_to_bev
 from ..backbones_3d import pfe, vfe
 from ..model_utils import model_nms_utils
+import pickle
 
 class Detector3DTemplate(nn.Module):
     def __init__(self, model_cfg, num_class, dataset):
@@ -218,6 +219,14 @@ class Detector3DTemplate(nn.Module):
         Returns:
 
         """
+        pickle_dict = {}
+        pickle_dict["original_3d_box_preds"] = batch_dict["original_box_preds"].detach().cpu().numpy()
+        pickle_dict["original_3d_cls_preds"] = batch_dict["original_cls_preds"].detach().cpu().numpy()
+        pickle_dict["result_2d"] = batch_dict["results_2d"].detach().cpu().numpy()
+        pickle_dict["fuse_3d_box_preds"] = batch_dict["batch_box_preds"].detach().cpu().numpy()
+        pickle_dict["fuse_3d_cls_preds"] = batch_dict["batch_cls_preds"].detach().cpu().numpy()
+        with open('/home/zty/Project/DeepLearning/OpenPCDet/anaylysis/frame_{}.pkl'.format(batch_dict["frame_id"][0]), 'wb') as file:  # 以二进制写模式打开文件
+            pickle.dump(pickle_dict, file)
         post_process_cfg = self.model_cfg.POST_PROCESSING
         batch_size = batch_dict['batch_size']
         recall_dict = {}
