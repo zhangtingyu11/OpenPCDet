@@ -71,5 +71,6 @@
         "variant": "cpp",
         "__nullptr": "cpp"
     },
-    "python.analysis.exclude": ["**/node_modules", "**/__pycache__", "**/build", ".git", "myenv/**", "output/**"]
+    "python.analysis.exclude": ["**/node_modules", "**/__pycache__", "**/build", ".git", "myenv/**", "output/**"],
+    "python.analysis.include": ["pcdet/**/*", "tools/**/*"]
 }
