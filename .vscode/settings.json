@@ -70,5 +70,6 @@
         "valarray": "cpp",
         "variant": "cpp",
         "__nullptr": "cpp"
-    }
+    },
+    "python.analysis.exclude": ["**/node_modules", "**/__pycache__", "**/build", ".git", "myenv/**", "output/**"]
 }
