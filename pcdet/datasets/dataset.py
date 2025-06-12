@@ -201,6 +201,9 @@ class DatasetTemplate(torch_data.Dataset):
 
             if data_dict.get('gt_boxes2d', None) is not None:
                 data_dict['gt_boxes2d'] = data_dict['gt_boxes2d'][selected]
+            
+            if data_dict.get('difficulty', None) is not None:
+                data_dict['difficulty'] = data_dict['difficulty'][selected].reshape(-1, 1)
 
         if data_dict.get('points', None) is not None:
             data_dict = self.point_feature_encoder.forward(data_dict)
@@ -242,7 +245,7 @@ class DatasetTemplate(torch_data.Dataset):
                         coor_pad = np.pad(coor, ((0, 0), (1, 0)), mode='constant', constant_values=i)
                         coors.append(coor_pad)
                     ret[key] = np.concatenate(coors, axis=0)
-                elif key in ['gt_boxes']:
+                elif key in ['gt_boxes', 'difficulty']:
                     max_gt = max([len(x) for x in val])
                     batch_gt_boxes3d = np.zeros((batch_size, max_gt, val[0].shape[-1]), dtype=np.float32)
                     for k in range(batch_size):

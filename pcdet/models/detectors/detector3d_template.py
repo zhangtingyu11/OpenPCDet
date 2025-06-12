@@ -268,7 +268,7 @@ class Detector3DTemplate(nn.Module):
                 final_labels = label_preds[selected]
                 final_boxes = box_preds[selected]
                     
-            recall_dict = self.generate_recall_record(
+            recall_dict = self.generate_recall_record_by_difficulty(
                 box_preds=final_boxes if 'rois' not in batch_dict else src_box_preds,
                 recall_dict=recall_dict, batch_index=index, data_dict=batch_dict,
                 thresh_list=post_process_cfg.RECALL_THRESH_LIST
@@ -323,6 +323,62 @@ class Detector3DTemplate(nn.Module):
                     recall_dict['roi_%s' % str(cur_thresh)] += roi_recalled
 
             recall_dict['gt'] += cur_gt.shape[0]
+        else:
+            gt_iou = box_preds.new_zeros(box_preds.shape[0])
+        return recall_dict
+    
+    @staticmethod
+    def generate_recall_record_by_difficulty(box_preds, recall_dict, batch_index, data_dict, thresh_list):
+        difficulty = data_dict['difficulty'][batch_index].squeeze(-1)
+        difficulty_mapping = {
+            0: "easy",
+            1: "moderate",
+            2: "hard"
+        }
+        rois = data_dict['rois'][batch_index] if 'rois' in data_dict else None
+        gt_boxes = data_dict['gt_boxes'][batch_index]
+
+        if recall_dict.__len__() == 0:
+            recall_dict = {'gt_easy': 0,
+                           'gt_moderate': 0,
+                           'gt_hard': 0}
+            for cur_thresh in thresh_list:
+                for diff in difficulty_mapping.values():
+                    recall_dict['roi_{}_{}'.format(str(cur_thresh), diff)] = 0
+                    recall_dict['rcnn_{}_{}'.format(str(cur_thresh), diff)] = 0
+
+        cur_gt = gt_boxes
+        k = cur_gt.__len__() - 1
+        while k >= 0 and cur_gt[k].sum() == 0:
+            k -= 1
+        cur_gt = cur_gt[:k + 1]
+        difficulty = difficulty[:k + 1]
+
+        if cur_gt.shape[0] > 0:
+            for key, val in difficulty_mapping.items():
+                mask = difficulty == key
+                cur_diff_gt = cur_gt[mask]
+                if cur_diff_gt.shape[0] == 0:
+                    continue
+                if box_preds.shape[0] > 0:
+                    iou3d_rcnn = iou3d_nms_utils.boxes_iou3d_gpu(box_preds[:, 0:7], cur_diff_gt[:, 0:7])
+                else:
+                    iou3d_rcnn = torch.zeros((0, cur_diff_gt.shape[0]))
+
+                if rois is not None:
+                    iou3d_roi = iou3d_nms_utils.boxes_iou3d_gpu(rois[:, 0:7], cur_diff_gt[:, 0:7])
+
+                for cur_thresh in thresh_list:
+                    if iou3d_rcnn.shape[0] == 0:
+                        recall_dict['rcnn_{}_{}'.format(str(cur_thresh), val)] += 0
+                    else:
+                        rcnn_recalled = (iou3d_rcnn.max(dim=0)[0] > cur_thresh).sum().item()
+                        recall_dict['rcnn_{}_{}'.format(str(cur_thresh), val)] += rcnn_recalled
+                    if rois is not None:
+                        roi_recalled = (iou3d_roi.max(dim=0)[0] > cur_thresh).sum().item()
+                        recall_dict['roi_{}_{}'.format(str(cur_thresh), val)] += roi_recalled
+
+                recall_dict['gt_{}'.format(val)] += cur_diff_gt.shape[0]
         else:
             gt_iou = box_preds.new_zeros(box_preds.shape[0])
         return recall_dict

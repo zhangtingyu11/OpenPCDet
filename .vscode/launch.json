@@ -1,0 +1,26 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        
+        {
+            "name": "eval debug",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd":"${workspaceFolder}/tools",
+            "program": "test.py",
+            "console": "integratedTerminal",
+            "args":[
+                "--cfg_file",
+                "/home/grapymage/Projects/OpenPCDet/tools/cfgs/kitti_models/voxel_rcnn_car.yaml",
+                "--batch_size",
+                "16",
+                "--ckpt",
+                "/home/grapymage/Projects/OpenPCDet/ckpt/voxel_rcnn_car_84.54.pth"
+            ],
+            "justMyCode": false
+        }
+    ]
+}
