@@ -18,3 +18,5 @@ version.py
 *.png
 tools/image_data
 *.eps
+runs
+*.pt

@@ -1,3 +1,4 @@
 {
-    "accessibility.signalOptions.volume": 0
+    "accessibility.signalOptions.volume": 0,
+    "python.analysis.include": ["pcdet/**/*", "tools/**/*"]
 }

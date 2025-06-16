@@ -14,11 +14,11 @@
             "console": "integratedTerminal",
             "args":[
                 "--cfg_file",
-                "/home/grapymage/Projects/OpenPCDet/tools/cfgs/kitti_models/voxel_rcnn_car.yaml",
+                "cfgs/kitti_models/voxel_rcnn_car.yaml",
                 "--batch_size",
                 "16",
                 "--ckpt",
-                "/home/grapymage/Projects/OpenPCDet/ckpt/voxel_rcnn_car_84.54.pth"
+                "../ckpt/voxel_rcnn_car_84.54.pth"
             ],
             "justMyCode": false
         }
