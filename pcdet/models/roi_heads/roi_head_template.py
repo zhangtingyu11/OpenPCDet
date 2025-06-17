@@ -130,7 +130,8 @@ class RoIHeadTemplate(nn.Module):
         heading_label = torch.clamp(heading_label, min=-np.pi / 2, max=np.pi / 2)
 
         gt_of_rois[:, :, 6] = heading_label
-        targets_dict['gt_of_rois'] = gt_of_rois
+        # TODO gt roi detach
+        targets_dict['gt_of_rois'] = gt_of_rois.detach()
         return targets_dict
 
     def get_box_reg_layer_loss(self, forward_ret_dict):

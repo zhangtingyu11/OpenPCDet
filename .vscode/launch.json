@@ -21,6 +21,30 @@
                 "../ckpt/voxel_rcnn_car_84.54.pth"
             ],
             "justMyCode": false
-        }
+        },
+        {
+            "name": "train clocs",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd":"${workspaceFolder}/tools",
+            "program": "train_clocs.py",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "train debug",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd":"${workspaceFolder}/tools",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "args":[
+                "--cfg_file",
+                "cfgs/kitti_models/voxel_rcnn_car_without_nms.yaml",
+                "--batch_size",
+                "16",
+            ],
+            "justMyCode": false
+        },
     ]
 }
