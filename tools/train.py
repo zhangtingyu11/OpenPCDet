@@ -16,6 +16,8 @@ from pcdet.models import build_network, model_fn_decorator
 from pcdet.utils import common_utils
 from train_utils.optimization import build_optimizer, build_scheduler
 from train_utils.train_utils import train_model
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
 def parse_config():

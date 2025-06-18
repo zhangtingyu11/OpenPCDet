@@ -42,7 +42,7 @@
                 "--cfg_file",
                 "cfgs/kitti_models/voxel_rcnn_car_without_nms.yaml",
                 "--batch_size",
-                "16",
+                "8",
             ],
             "justMyCode": false
         },

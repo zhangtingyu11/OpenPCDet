@@ -80,18 +80,20 @@ class ProposalTargetLayer(nn.Module):
         gt_boxes = batch_dict['gt_boxes']
 
         code_size = rois.shape[-1]
-        # batch_rois = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, code_size)
-        # batch_gt_of_rois = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, code_size + 1)
-        # batch_roi_ious = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE)
-        # batch_roi_scores = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE)
-        # batch_roi_labels = rois.new_zeros((batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE), dtype=torch.long)
-        
         # TODO 需要设置反向传播
-        batch_rois = rois.new_zeros((batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, code_size), requires_grad=True)
-        batch_gt_of_rois = rois.new_zeros((batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, code_size + 1))
-        batch_roi_ious = rois.new_zeros((batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE))
-        batch_roi_scores = rois.new_zeros((batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE), requires_grad=True)
-        batch_roi_labels = rois.new_zeros((batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE), dtype=torch.long)
+        no_sample_flag = batch_dict.get("no_sample", False)
+        if no_sample_flag:
+            batch_rois = rois.new_zeros((batch_size, rois.shape[1], code_size), requires_grad=True)
+            batch_gt_of_rois = rois.new_zeros((batch_size, rois.shape[1], code_size + 1))
+            batch_roi_ious = rois.new_zeros((batch_size, rois.shape[1]))
+            batch_roi_scores = rois.new_zeros((batch_size, rois.shape[1]), requires_grad=True)
+            batch_roi_labels = rois.new_zeros((batch_size, rois.shape[1]), dtype=torch.long)
+        else:
+            batch_rois = rois.new_zeros((batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, code_size), requires_grad=True)
+            batch_gt_of_rois = rois.new_zeros((batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, code_size + 1))
+            batch_roi_ious = rois.new_zeros((batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE))
+            batch_roi_scores = rois.new_zeros((batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE), requires_grad=True)
+            batch_roi_labels = rois.new_zeros((batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE), dtype=torch.long)
 
         for index in range(batch_size):
             cur_roi, cur_gt, cur_roi_labels, cur_roi_scores = \
@@ -111,7 +113,11 @@ class ProposalTargetLayer(nn.Module):
                 iou3d = iou3d_nms_utils.boxes_iou3d_gpu(cur_roi, cur_gt[:, 0:7])  # (M, N)
                 max_overlaps, gt_assignment = torch.max(iou3d, dim=1)
 
-            sampled_inds = self.subsample_rois(max_overlaps=max_overlaps)
+            # TODO 修改成不采样
+            if no_sample_flag:
+                sampled_inds = torch.arange(0, cur_roi.shape[0], dtype=torch.long, device=cur_roi.device)
+            else:
+                sampled_inds = self.subsample_rois(max_overlaps=max_overlaps)
 
             batch_rois[index] = cur_roi[sampled_inds]
             batch_roi_labels[index] = cur_roi_labels[sampled_inds]
