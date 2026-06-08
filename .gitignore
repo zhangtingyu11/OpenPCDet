@@ -26,5 +26,7 @@ tests
 /cfgs
 .claude/
 tools/logs/
+*_REPORT.md
+CLOCS_VOXELRCNN_CHANGES.md
 
 
