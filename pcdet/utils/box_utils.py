@@ -127,10 +127,14 @@ def lidar_boxes_to_image_kitti_torch_cuda(boxes, P2_T, R0_T, V2C_T, img_height, 
     y_min, _ = torch.min(points_on_image[:, :, :, 1], dim=-1)
     y_max, _ = torch.max(points_on_image[:, :, :, 1], dim=-1)
     
-    x_min = torch.clamp(x_min,min = torch.zeros(batch_size, 1, device = 0),max = img_width.unsqueeze(-1)).unsqueeze(-1)
-    y_min = torch.clamp(y_min,min = torch.zeros(batch_size, 1, device = 0),max = img_height.unsqueeze(-1)).unsqueeze(-1)
-    x_max = torch.clamp(x_max,min = torch.zeros(batch_size, 1, device = 0),max = img_width.unsqueeze(-1)).unsqueeze(-1)
-    y_max = torch.clamp(y_max,min = torch.zeros(batch_size, 1, device = 0),max = img_height.unsqueeze(-1)).unsqueeze(-1)
+    x_min = torch.maximum(x_min, torch.zeros(batch_size, 1, device = 0))
+    x_min = torch.minimum(x_min.unsqueeze(-1), img_width.unsqueeze(-1).unsqueeze(-1))
+    y_min = torch.maximum(y_min, torch.zeros(batch_size, 1, device = 0))
+    y_min = torch.minimum(y_min.unsqueeze(-1), img_height.unsqueeze(-1).unsqueeze(-1))
+    x_max = torch.maximum(x_max, torch.zeros(batch_size, 1, device = 0))
+    x_max = torch.minimum(x_max.unsqueeze(-1), img_width.unsqueeze(-1).unsqueeze(-1))
+    y_max = torch.maximum(y_max, torch.zeros(batch_size, 1, device = 0))
+    y_max = torch.minimum(y_max.unsqueeze(-1), img_height.unsqueeze(-1).unsqueeze(-1))
     
     points_project_on_image = torch.cat([x_min, y_min, x_max, y_max], dim=-1)
     return points_project_on_image

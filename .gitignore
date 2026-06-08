@@ -20,4 +20,11 @@ tools/image_data
 *.png
 tests
 
+# Generated / temp files
+*.log
+*.out
+/cfgs
+.claude/
+tools/logs/
+
 

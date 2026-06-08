@@ -613,10 +613,13 @@ class CosineContrastiveLoss(nn.Module):
         self.margin = margin
 
     def forward(self, label, cos_sim):
-        # cos_sim = F.cosine_similarity(output1, output2, -1)
-        pos_cos_con = ((label) * torch.div(torch.pow((1.0-cos_sim), 2), 4)).sum() / label.sum()
-        neg_cos_con = ((1-label) * torch.pow(cos_sim * torch.lt(cos_sim, self.margin), 2)).sum() / (1-label).sum()
-        # loss_cos_con = torch.mean((label) * torch.div(torch.pow((1.0-cos_sim), 2), 4) +
-        #                             (1-label) * torch.pow(cos_sim * torch.lt(cos_sim, self.margin), 2))
-        loss_cos_con = pos_cos_con + neg_cos_con
-        return loss_cos_con
+        # Positive pairs: pull cos_sim toward 1
+        n_pos = label.sum().clamp(min=1)
+        pos_loss = (label * torch.pow(1.0 - cos_sim, 2) / 4).sum() / n_pos
+
+        # Negative pairs: push cos_sim below margin
+        neg_label = 1.0 - label
+        n_neg = neg_label.sum().clamp(min=1)
+        neg_loss = (neg_label * torch.pow(torch.clamp(cos_sim - self.margin, min=0), 2)).sum() / n_neg
+
+        return pos_loss + neg_loss

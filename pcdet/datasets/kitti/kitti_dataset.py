@@ -1,6 +1,7 @@
 import copy
 import pickle
 import mmcv
+from pathlib import Path
 
 import numpy as np
 from skimage import io
@@ -62,17 +63,17 @@ class KittiDataset(DatasetTemplate):
         self.sample_id_list = [x.strip() for x in open(split_dir).readlines()] if split_dir.exists() else None
 
     def get_lidar(self, idx):
-        lidar_file = self.root_split_path / 'velodyne' / ('%s.bin' % idx)
+        lidar_file = self.root_split_path / 'velodyne' / ('%06d.bin' % idx)
         assert lidar_file.exists()
         return np.fromfile(str(lidar_file), dtype=np.float32).reshape(-1, 4)
     
     def get_results_2d(self, idx, detector_name):
-        result_2d_file = self.root_path / 'image_detector_data' / detector_name / ('%s.txt' % idx)
+        result_2d_file = self.root_path / 'image_detector_data' / detector_name / ('%06d.txt' % idx)
         assert result_2d_file.exists()
         return object3d_kitti.get_objects_from_label(result_2d_file)
     
     def get_results_3d(self, idx, detector_name):
-        result_3d_file = self.root_path / 'lidar_detector_data' / detector_name / ('%s.pkl' % idx)
+        result_3d_file = self.root_path / 'lidar_detector_data' / detector_name / ('%06d.pkl' % idx)
         assert result_3d_file.exists()
         with open(result_3d_file, 'rb') as f:
             results_3d = pickle.load(f)
@@ -86,7 +87,7 @@ class KittiDataset(DatasetTemplate):
         Returns:
             image: (H, W, 3), RGB Image
         """
-        img_file = self.root_split_path / 'image_2' / ('%s.png' % idx)
+        img_file = self.root_split_path / 'image_2' / ('%06d.png' % idx)
         assert img_file.exists()
         image = io.imread(img_file)
         image = image.astype(np.float32)
@@ -94,18 +95,18 @@ class KittiDataset(DatasetTemplate):
         return image
     
     def get_mmcv_image(self, idx):
-        img_file = self.root_split_path / 'image_2' / ('%s.png' % idx)
+        img_file = self.root_split_path / 'image_2' / ('%06d.png' % idx)
         assert img_file.exists()
         image = mmcv.imread(img_file)
         return image
 
     def get_image_shape(self, idx):
-        img_file = self.root_split_path / 'image_2' / ('%s.png' % idx)
+        img_file = self.root_split_path / 'image_2' / ('%06d.png' % idx)
         assert img_file.exists()
         return np.array(io.imread(img_file).shape[:2], dtype=np.int32)
 
     def get_label(self, idx):
-        label_file = self.root_split_path / 'label_2' / ('%s.txt' % idx)
+        label_file = self.root_split_path / 'label_2' / ('%06d.txt' % idx)
         assert label_file.exists()
         return object3d_kitti.get_objects_from_label(label_file)
 
@@ -117,7 +118,7 @@ class KittiDataset(DatasetTemplate):
         Returns:
             depth: (H, W), Depth map
         """
-        depth_file = self.root_split_path / 'depth_2' / ('%s.png' % idx)
+        depth_file = self.root_split_path / 'depth_2' / ('%06d.png' % idx)
         assert depth_file.exists()
         depth = io.imread(depth_file)
         depth = depth.astype(np.float32)
@@ -125,12 +126,12 @@ class KittiDataset(DatasetTemplate):
         return depth
 
     def get_calib(self, idx):
-        calib_file = self.root_split_path / 'calib' / ('%s.txt' % idx)
+        calib_file = self.root_split_path / 'calib' / ('%06d.txt' % idx)
         assert calib_file.exists()
         return calibration_kitti.Calibration(calib_file)
 
     def get_road_plane(self, idx):
-        plane_file = self.root_split_path / 'planes' / ('%s.txt' % idx)
+        plane_file = self.root_split_path / 'planes' / ('%06d.txt' % idx)
         if not plane_file.exists():
             return None
 
@@ -255,13 +256,22 @@ class KittiDataset(DatasetTemplate):
         for k in range(len(infos)):
             print('gt_database sample: %d/%d' % (k + 1, len(infos)))
             info = infos[k]
-            sample_idx = info['point_cloud']['lidar_idx']
+            if 'point_cloud' in info:
+                sample_idx = info['point_cloud']['lidar_idx']
+            else:
+                sample_idx = info['image_idx']
             points = self.get_lidar(sample_idx)
             annos = info['annos']
             names = annos['name']
             difficulty = annos['difficulty']
             bbox = annos['bbox']
-            gt_boxes = annos['gt_boxes_lidar']
+            if 'gt_boxes_lidar' in annos:
+                gt_boxes = annos['gt_boxes_lidar']
+            else:
+                calib = self.get_calib(sample_idx)
+                loc, dims, rots = annos['location'], annos['dimensions'], annos['rotation_y']
+                gt_boxes_camera = np.concatenate([loc, dims, rots[..., np.newaxis]], axis=1).astype(np.float32)
+                gt_boxes = box_utils.boxes3d_kitti_camera_to_lidar(gt_boxes_camera, calib)
 
             num_obj = gt_boxes.shape[0]
             point_indices = roiaware_pool3d_utils.points_in_boxes_cpu(
@@ -394,8 +404,8 @@ class KittiDataset(DatasetTemplate):
 
         info = copy.deepcopy(self.kitti_infos[index])
 
-        sample_idx = info['point_cloud']['lidar_idx']
-        img_shape = info['image']['image_shape']
+        sample_idx = info['image_idx']
+        img_shape = info['img_shape']
         calib = self.get_calib(sample_idx)
         get_item_list = self.dataset_cfg.get('GET_ITEM_LIST', ['points'])
         detector_2d_name = self.dataset_cfg.get('DETECTOR_2D_NAME', None)

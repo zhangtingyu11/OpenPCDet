@@ -193,18 +193,33 @@ class ClocsVoxelRCNNHead(AnchorHeadTemplate):
 
         self.model_cfg = model_cfg
         self.predict_boxes_when_training = model_cfg.get("PREDICT_BOXES_WHEN_TRAINING", False)
-        
+
+        self.extra_feature_count = 0
+        self.extra_feature_names = []
+        if model_cfg.get('USE_EXTRA_FEATURES', False):
+            all_features = ['center_offset_x', 'center_offset_y', 'w_ratio', 'h_ratio',
+                           'score_product', 'score_diff', 'iou_density', 'mutual_best']
+            default_enabled = ['center_offset_x', 'center_offset_y', 'w_ratio', 'h_ratio',
+                              'score_product', 'score_diff', 'iou_density']
+            enabled = model_cfg.get('EXTRA_FEATURE_LIST', default_enabled)
+            self.extra_feature_names = [f for f in all_features if f in enabled]
+            self.extra_feature_count = len(self.extra_feature_names)
+        input_channels = input_channels + self.extra_feature_count
+
         num_filters = self.model_cfg.NUM_FILTERS
         num_filters = [input_channels] + num_filters
-        
+        use_bn = self.model_cfg.get("USE_BN", False)
+
         self.fuse = []
         for i in range(1, len(num_filters)-1):
             if self.model_cfg.get("USE_RES_BLOCK", False):
               self.fuse.append(ResnetBlock(num_filters[i-1], num_filters[i]))
             else:
               self.fuse.append(nn.Conv2d(num_filters[i-1], num_filters[i], 1))
+              if use_bn:
+                  self.fuse.append(nn.BatchNorm2d(num_filters[i]))
               self.fuse.append(nn.ReLU())
-            
+
         #* 因为希望最后的结果不是全部大于0的, 所以没有加ReLU
         self.fuse.append(nn.Conv2d(num_filters[-2], num_filters[-1], 1))
         self.fuse = nn.Sequential(*self.fuse)
@@ -215,19 +230,106 @@ class ClocsVoxelRCNNHead(AnchorHeadTemplate):
           img_num_filters = [self.model_cfg.IMAGE_INPUT_CHANNELS] + img_num_filters
           for i in range(1, len(img_num_filters)-1):
               self.image_extractor.append(nn.Conv2d(img_num_filters[i-1], img_num_filters[i], 1))
+              if use_bn:
+                  self.image_extractor.append(nn.BatchNorm2d(img_num_filters[i]))
               self.image_extractor.append(nn.ReLU())
           self.image_extractor.append(nn.Conv2d(img_num_filters[-2], img_num_filters[-1], 1))
           self.image_extractor = nn.Sequential(*self.image_extractor)
-          
+
           #* LiDAR特征提取器
           self.lidar_extractor = []
           lidar_num_filters = self.model_cfg.LIDAR_NUM_FILTERS
           lidar_num_filters = [self.model_cfg.LIDAR_INPUT_CHANNELS] + lidar_num_filters
           for i in range(1, len(lidar_num_filters)-1):
               self.lidar_extractor.append(nn.Conv2d(lidar_num_filters[i-1], lidar_num_filters[i], 1))
+              if use_bn:
+                  self.lidar_extractor.append(nn.BatchNorm2d(lidar_num_filters[i]))
               self.lidar_extractor.append(nn.ReLU())
           self.lidar_extractor.append(nn.Conv2d(lidar_num_filters[-2], lidar_num_filters[-1], 1))
           self.lidar_extractor = nn.Sequential(*self.lidar_extractor)
+
+    @staticmethod
+    def compute_pairwise_features(box_3d_proj, box_2d, scores_3d, scores_2d, iou):
+        """
+        Compute additional geometric and score-agreement features for each 3D-2D pair.
+
+        Args:
+            box_3d_proj: (N3, 4) projected 3D boxes [x1, y1, x2, y2] on image
+            box_2d: (N2, 4) 2D detection boxes [x1, y1, x2, y2]
+            scores_3d: (N3, 1) 3D detection scores
+            scores_2d: (N2, 1) 2D detection scores
+            iou: (N3, N2) IoU matrix, -10 for invalid pairs
+
+        Returns:
+            features: (C, N3, N2) additional feature channels
+        """
+        N3, N2 = iou.shape
+        device = iou.device
+        invalid_mask = (iou <= -1.0)  # invalid pairs get -10
+
+        # Box dimensions
+        w3 = (box_3d_proj[:, 2] - box_3d_proj[:, 0]).clamp(min=1.0)  # (N3,)
+        h3 = (box_3d_proj[:, 3] - box_3d_proj[:, 1]).clamp(min=1.0)
+        w2 = (box_2d[:, 2] - box_2d[:, 0]).clamp(min=1.0)  # (N2,)
+        h2 = (box_2d[:, 3] - box_2d[:, 1]).clamp(min=1.0)
+
+        # Center coordinates
+        cx3 = (box_3d_proj[:, 0] + box_3d_proj[:, 2]) / 2.0  # (N3,)
+        cy3 = (box_3d_proj[:, 1] + box_3d_proj[:, 3]) / 2.0
+        cx2 = (box_2d[:, 0] + box_2d[:, 2]) / 2.0  # (N2,)
+        cy2 = (box_2d[:, 1] + box_2d[:, 3]) / 2.0
+
+        # Broadcast shapes: (N3, N2)
+        # 1. Normalized center offsets
+        dx = (cx3.unsqueeze(1) - cx2.unsqueeze(0)).abs()
+        dy = (cy3.unsqueeze(1) - cy2.unsqueeze(0)).abs()
+        center_offset_x = dx / w2.unsqueeze(0).clamp(min=1.0)
+        center_offset_y = dy / h2.unsqueeze(0).clamp(min=1.0)
+
+        # 2. Size ratios (closer to 1 = better alignment)
+        w_ratio = w2.unsqueeze(0) / w3.unsqueeze(1).clamp(min=1.0)
+        h_ratio = h2.unsqueeze(0) / h3.unsqueeze(1).clamp(min=1.0)
+        # Log-scale for symmetry: log(0.5)=-0.69, log(2)=+0.69, log(1)=0
+        w_ratio = torch.log(w_ratio.clamp(min=0.1, max=10.0))
+        h_ratio = torch.log(h_ratio.clamp(min=0.1, max=10.0))
+
+        # 3. Score agreement
+        s3 = scores_3d.squeeze(-1).unsqueeze(1)  # (N3, 1)
+        s2 = scores_2d.squeeze(-1).unsqueeze(0)  # (1, N2)
+        score_product = s3 * s2  # Joint confidence
+        score_diff = (s3 - s2).abs()  # Detector disagreement
+
+        # 4. IoU density: IoU per 2D box area (penalize tiny IoU with large boxes)
+        area2 = (w2 * h2).unsqueeze(0).clamp(min=1.0)  # (1, N2)
+        iou_density = iou * 10000.0 / area2  # Scale for reasonable range
+
+        # 5. Mutual best match: 1 if i is j's best 3D match AND j is i's best 2D match
+        iou_valid = iou.clone()
+        iou_valid[invalid_mask] = -1.0
+        best_2d_for_3d = iou_valid.argmax(dim=1)  # (N3,) best 2D box for each 3D box
+        best_3d_for_2d = iou_valid.argmax(dim=0)  # (N2,) best 3D box for each 2D box
+        is_best_2d = torch.zeros_like(iou)  # (N3, N2)
+        is_best_3d = torch.zeros_like(iou)
+        is_best_2d[torch.arange(N3, device=device), best_2d_for_3d] = 1.0
+        is_best_3d[best_3d_for_2d, torch.arange(N2, device=device)] = 1.0
+        mutual_best = is_best_2d * is_best_3d  # 1 for mutual best matches, 0 otherwise
+
+        # Stack features
+        features = torch.stack([
+            center_offset_x,
+            center_offset_y,
+            w_ratio,
+            h_ratio,
+            score_product,
+            score_diff,
+            iou_density,
+            mutual_best,
+        ], dim=0)  # (8, N3, N2)
+
+        # Set invalid pairs to -10
+        features[:, invalid_mask] = -10.0
+
+        return features
 
     def forward(self, data_dict):
         #* 读取3D目标检测的结果
@@ -258,6 +360,7 @@ class ClocsVoxelRCNNHead(AnchorHeadTemplate):
         #* 2D目标检测的个数
         boxes_2d_num = boxes2d_by_detector.shape[1]
         cls_pred_list = []
+        clocs_weight_list = []
         if self.model_cfg.USE_CONTRA:
           lidar_feature_expanded_list = []
           image_feature_expanded_list = []
@@ -292,6 +395,22 @@ class ClocsVoxelRCNNHead(AnchorHeadTemplate):
             self.forward_ret_dict['3d_max_confidence'] = max_confidences
             input_features = ious
 
+            if self.extra_feature_count > 0:
+                all_extra = self.compute_pairwise_features(
+                    box_2d_preds, box_2d_pos, scores_3d, scores_2d,
+                    ious[0, 0, :, :]
+                )
+                # Map feature names to indices
+                name_to_idx = {
+                    'center_offset_x': 0, 'center_offset_y': 1,
+                    'w_ratio': 2, 'h_ratio': 3,
+                    'score_product': 4, 'score_diff': 5,
+                    'iou_density': 6, 'mutual_best': 7,
+                }
+                selected_idx = [name_to_idx[n] for n in self.extra_feature_names]
+                extra_feats = all_extra[selected_idx]
+                input_features = torch.cat([input_features, extra_feats.unsqueeze(0)], dim=1)
+
             if self.model_cfg.USE_CONTRA:
               image_height, image_width = image_shape
               box_2d_detector_normalized = box_2d_detector.clone()
@@ -324,11 +443,13 @@ class ClocsVoxelRCNNHead(AnchorHeadTemplate):
               # sim_feature = F.cosine_similarity(lidar_feature_expanded, image_feature_expanded, -1)[None, None, :, :]
               input_features = torch.cat([input_features, sim_feature], dim=1)
 
-            # if (self.cal_loss_flag):
-            non_empty_input_features = (input_features[:, :, non_empty_mask[:, 0], non_empty_mask[:, 1]]).unsqueeze(2)
-            new_res = self.fuse(non_empty_input_features)
-            res = torch.zeros((1, 1, boxes_3d_num, boxes_2d_num), dtype=torch.float32, device=0)-100
-            res[:, :, non_empty_mask[:, 0], non_empty_mask[:, 1]] = new_res.squeeze(2)
+            if non_empty_mask.shape[0] == 0:
+                res = torch.zeros((1, 1, boxes_3d_num, boxes_2d_num), dtype=torch.float32, device=0)-100
+            else:
+                non_empty_input_features = (input_features[:, :, non_empty_mask[:, 0], non_empty_mask[:, 1]]).unsqueeze(2)
+                new_res = self.fuse(non_empty_input_features)
+                res = torch.zeros((1, 1, boxes_3d_num, boxes_2d_num), dtype=torch.float32, device=0)-100
+                res[:, :, non_empty_mask[:, 0], non_empty_mask[:, 1]] = new_res.squeeze(2)
             # else:
             # res = torch.zeros((1, 1, boxes_3d_num, boxes_2d_num)).type(torch.float32).cuda()-100
 
@@ -336,6 +457,12 @@ class ClocsVoxelRCNNHead(AnchorHeadTemplate):
             output = torch.amax(res, dim = -1)
             output = output.squeeze().view(1,-1,1)
             cls_pred_list.append(output)
+            # Dynamic CLOCs weight based on max IoU per 3D box
+            if self.model_cfg.get('DYNAMIC_CLOCS_WEIGHT', False):
+                max_iou_3d = ious[0, 0, :, :].max(dim=1).values  # (N3,)
+                match_quality = torch.clamp(max_iou_3d / 0.5, 0, 1)  # IoU 0→0, IoU 0.5→1
+                dyn_weight = (0.3 + 0.4 * match_quality).view(1, -1, 1)
+                clocs_weight_list.append(dyn_weight)
         cls_preds = torch.cat(cls_pred_list, dim=0)
         if self.model_cfg.USE_CONTRA:
           self.forward_ret_dict['lidar_features_expanded'] = torch.cat(lidar_feature_expanded_list, dim=0)
@@ -361,10 +488,19 @@ class ClocsVoxelRCNNHead(AnchorHeadTemplate):
         if self.training:
             gt_boxes = data_dict['gt_boxes'].detach().cpu().numpy()
             gt_boxes_classes = np.expand_dims(gt_boxes[:, :, -1], axis=-1)
-            gt_boxes_in_camera = np.expand_dims(boxes3d_lidar_to_kitti_camera(gt_boxes[0], data_dict['calib'][0]), axis=0)
+            batch_size = gt_boxes.shape[0]
+            gt_boxes_camera_list = []
+            preds_camera_list = []
+            for b in range(batch_size):
+                calib_b = data_dict['calib'][b]
+                gt_cam = boxes3d_lidar_to_kitti_camera(gt_boxes[b], calib_b)
+                gt_boxes_camera_list.append(gt_cam)
+                pred_cam = boxes3d_lidar_to_kitti_camera(preds[b].detach().cpu().numpy(), calib_b)
+                preds_camera_list.append(pred_cam)
+            gt_boxes_in_camera = np.stack(gt_boxes_camera_list, axis=0)
             gt_boxes_in_camera = np.concatenate([gt_boxes_in_camera, gt_boxes_classes], axis=-1)
             #* 在相机坐标系下的预测框
-            preds_in_camera = np.expand_dims(boxes3d_lidar_to_kitti_camera(preds[0].detach().cpu().numpy(), data_dict['calib'][0]), axis=0)
+            preds_in_camera = np.stack(preds_camera_list, axis=0)
             targets_dict = self.assign_targets(
                 preds=preds_in_camera,
                 gt_boxes=gt_boxes_in_camera
@@ -372,7 +508,13 @@ class ClocsVoxelRCNNHead(AnchorHeadTemplate):
             self.forward_ret_dict.update(targets_dict)
             
         if not self.training or self.predict_boxes_when_training:
-            data_dict['batch_cls_preds'] = cls_preds
+            # Combine VoxelRCNN CLS score with CLOCs fusion score
+            voxelrcnn_logits = self.forward_ret_dict['preds_3d']
+            if self.model_cfg.get('DYNAMIC_CLOCS_WEIGHT', False) and len(clocs_weight_list) > 0:
+                clocs_weight = torch.cat(clocs_weight_list, dim=0)
+            else:
+                clocs_weight = self.model_cfg.get('CLOCS_SCORE_WEIGHT', 0.5)
+            data_dict['batch_cls_preds'] = clocs_weight * cls_preds + (1 - clocs_weight) * voxelrcnn_logits
             data_dict['batch_box_preds'] = preds
             data_dict['cls_preds_normalized'] = False
 
@@ -385,11 +527,11 @@ class ClocsVoxelRCNNHead(AnchorHeadTemplate):
         Returns:
 
         """
+        B, N, C = preds.shape
         targets_dict = self.target_assigner.assign_targets(
-            [preds.reshape(*self.anchors[0].shape)], gt_boxes
+            [preds.reshape(B, 1, 1, 1, N, C)], gt_boxes
         )
         return targets_dict
- 
     def get_loss(self):
         tb_dict = {}
         cls_loss, tb_dict1 = self.get_cls_layer_loss()
@@ -476,27 +618,17 @@ class ClocsVoxelRCNNHead(AnchorHeadTemplate):
         return cls_loss, tb_dict
 
     def get_contra_loss(self):
-        lidar_feature_expanded = self.forward_ret_dict['lidar_features_expanded']
-        image_feature_expanded = self.forward_ret_dict['image_features_expanded']
-        contra_label = self.forward_ret_dict['contrastive_label'].squeeze().int()
-        contra_loss = self.contra_loss_func(lidar_feature_expanded, image_feature_expanded, contra_label)
+        lidar_feats = self.forward_ret_dict['lidar_features_expanded']
+        image_feats = self.forward_ret_dict['image_features_expanded']
+        cos_sim = F.cosine_similarity(lidar_feats, image_feats, dim=-1)
+        contra_label = self.forward_ret_dict['contrastive_label'].squeeze().float()
+        contra_loss = self.contra_loss_func(contra_label, cos_sim)
         contra_loss = contra_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['contra_weight']
         tb_dict = {
-            'contra_loss': contra_loss
+            'contra_loss': contra_loss.item()
         }
         return contra_loss, tb_dict
 
-    def assign_targets(self, preds, gt_boxes):
-        """
-        Args:
-            gt_boxes: (B, M, 8)
-        Returns:
-
-        """
-        targets_dict = self.target_assigner.assign_targets(
-            [preds.reshape([1, 1, 1, 1, 100, 7])], gt_boxes
-        )
-        return targets_dict
     def get_target_assigner(self, anchor_target_cfg):
         if anchor_target_cfg.NAME == 'ATSS':
             target_assigner = ATSSTargetAssigner(

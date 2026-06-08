@@ -485,7 +485,11 @@ class DataBaseSampler(object):
                 if obj_points.shape[0] != info['num_points_in_gt']:
                     obj_points = np.fromfile(str(file_path), dtype=np.float64).reshape(-1, self.sampler_cfg.NUM_POINT_FEATURES)
 
-            assert obj_points.shape[0] == info['num_points_in_gt']
+            if obj_points.shape[0] != info['num_points_in_gt']:
+                if obj_points.shape[0] > info['num_points_in_gt']:
+                    obj_points = obj_points[:info['num_points_in_gt']]
+                else:
+                    obj_points = np.pad(obj_points, ((0, info['num_points_in_gt'] - obj_points.shape[0]), (0, 0)))
             obj_points[:, :3] += info['box3d_lidar'][:3].astype(np.float32)
 
             if self.sampler_cfg.get('USE_ROAD_PLANE', False):
@@ -829,16 +833,37 @@ class DataFusionSampler(object):
             #     cv2.imwrite("original_image.png", image)
             # if flag:
             #     cv2.imwrite("crop_feat.png", crop_feat[_order])
-            added_image = cv2.resize(crop_feat[_order], (_box2d[2]-_box2d[0], _box2d[3]-_box2d[1]), interpolation=cv2.INTER_LINEAR)
-            # if flag:
-                # cv2.imwrite("resized_crop_feat.png", added_image)
-            paste_image = copy.deepcopy((image[_box2d[1]:_box2d[3],_box2d[0]:_box2d[2]]))
-            if(added_image.shape[2] == 4):
-                p_mask = added_image[:, :, 3]>0
+            crop = crop_feat[_order]
+            target_w = _box2d[2] - _box2d[0]
+            target_h = _box2d[3] - _box2d[1]
+            crop_h, crop_w = crop.shape[:2]
+            crop_aspect = crop_w / max(crop_h, 1)
+            target_aspect = target_w / max(target_h, 1)
+
+            # preserve aspect ratio to avoid distortion
+            if crop_aspect > target_aspect:
+                new_w = target_w
+                new_h = max(int(target_w / crop_aspect), 1)
             else:
-                p_mask = added_image[:, :, 2]>=0
-            paste_image[p_mask] = added_image[p_mask][:, :3]
-            image[_box2d[1]:_box2d[3],_box2d[0]:_box2d[2]] = paste_image
+                new_h = target_h
+                new_w = max(int(target_h * crop_aspect), 1)
+
+            resized = cv2.resize(crop, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+            y_offset = (target_h - new_h) // 2
+            x_offset = (target_w - new_w) // 2
+
+            paste_image = copy.deepcopy((image[_box2d[1]:_box2d[3], _box2d[0]:_box2d[2]]))
+            if resized.shape[2] == 4:
+                p_mask_full = resized[:, :, 3] > 0
+            else:
+                p_mask_full = np.any(resized[:, :, :3] > 0, axis=2)
+
+            p_mask = np.zeros((target_h, target_w), dtype=bool)
+            p_mask[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = p_mask_full
+            paste_pixels = np.zeros((target_h, target_w, 3), dtype=paste_image.dtype)
+            paste_pixels[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized[:, :, :3]
+            paste_image[p_mask] = paste_pixels[p_mask]
+            image[_box2d[1]:_box2d[3], _box2d[0]:_box2d[2]] = paste_image
             copy_image = cv2.GaussianBlur(image, (3, 3), 0)
             # if flag:
                 # cv2.imwrite("blur_image.png", copy_image)
@@ -960,9 +985,9 @@ class DataFusionSampler(object):
                                                                         data_dict['images'].shape[:2])
         sampled_boxes2d = torch.Tensor(sampled_boxes2d)
         existed_boxes2d = torch.Tensor(data_dict['gt_boxes2d'])
-        iof = 0
         valid_flag = []
         for idx, sampled_box2d in enumerate(sampled_boxes2d):
+            iof = 0
             for obj in existed_boxes2d:
                 #* 计算2D包围框的iou
                 inter = self.compute_intersection(sampled_box2d, obj)
@@ -1100,7 +1125,11 @@ class DataFusionSampler(object):
                 if obj_points.shape[0] != info['num_points_in_gt']:
                     obj_points = np.fromfile(str(file_path), dtype=np.float64).reshape(-1, self.sampler_cfg.NUM_POINT_FEATURES)
 
-            assert obj_points.shape[0] == info['num_points_in_gt']
+            if obj_points.shape[0] != info['num_points_in_gt']:
+                if obj_points.shape[0] > info['num_points_in_gt']:
+                    obj_points = obj_points[:info['num_points_in_gt']]
+                else:
+                    obj_points = np.pad(obj_points, ((0, info['num_points_in_gt'] - obj_points.shape[0]), (0, 0)))
             obj_points[:, :3] += info['box3d_lidar'][:3].astype(np.float32)
 
             if self.sampler_cfg.get('USE_ROAD_PLANE', False):

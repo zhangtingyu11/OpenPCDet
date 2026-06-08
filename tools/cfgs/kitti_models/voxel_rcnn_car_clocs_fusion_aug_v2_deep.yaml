@@ -191,7 +191,7 @@ MODEL:
         NAME: ClocsVoxelRCNNHead
         CLASS_AGNOSTIC: False
         USE_RES_BLOCK: True
-        USE_EXTRA_FEATURES: False
+        USE_EXTRA_FEATURES: True
         INPUT_FEATURES: 5
         IMAGE_NUM_FILTERS: [16, 32]
         LIDAR_NUM_FILTERS: [16, 32]
@@ -221,7 +221,7 @@ MODEL:
                 'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
             }
 
-        NUM_FILTERS: [18, 36, 36, 1]
+        NUM_FILTERS: [32, 64, 128, 64, 1]
         MAXPOOL_DIM: 200
 
         ANCHOR_GENERATOR_CONFIG: [

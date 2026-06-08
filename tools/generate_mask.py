@@ -10,8 +10,14 @@ import logging
 import pickle
 from pcdet.utils.object3d_kitti import get_objects_from_label
 from pcdet.utils import calibration_kitti, box_utils
-import cvbase as cvb
-import pycocotools.mask as maskUtils
+try:
+    import cvbase as cvb
+except ImportError:
+    cvb = None
+try:
+    import pycocotools.mask as maskUtils
+except ImportError:
+    maskUtils = None
 
 
 def make_json_dict(imgs, anns):
@@ -60,20 +66,23 @@ class Segment_Ground_Truth_KITTI:
         
         #* 数据来源
         self.data_source = self.cfg["DATA_SOURCE"]
-        #* KINS数据集文件路径
-        kins_json_path = self.cfg["KINS_JSON_PATH"]
-        anns = cvb.load(kins_json_path)
-        imgs_info = anns['images']
-        anns_info = anns["annotations"]
-        self.kins_iou_thresh = self.cfg["KINS_IOU_THRESH"]
+        if self.data_source == "KINS":
+            if cvb is None:
+                raise ImportError("cvbase is required for KINS data source")
+            #* KINS数据集文件路径
+            kins_json_path = self.cfg["KINS_JSON_PATH"]
+            anns = cvb.load(kins_json_path)
+            imgs_info = anns['images']
+            anns_info = anns["annotations"]
+            self.kins_iou_thresh = self.cfg["KINS_IOU_THRESH"]
 
-        imgs_dict, anns_dict = make_json_dict(imgs_info, anns_info)
-        self.kins_database = {}
-        for img_id in anns_dict.keys():
-            img_name = imgs_dict[img_id]
-            frame_id, _ = img_name.split('.')
-            anns = anns_dict[img_id]
-            self.kins_database[frame_id] = anns
+            imgs_dict, anns_dict = make_json_dict(imgs_info, anns_info)
+            self.kins_database = {}
+            for img_id in anns_dict.keys():
+                img_name = imgs_dict[img_id]
+                frame_id, _ = img_name.split('.')
+                anns = anns_dict[img_id]
+                self.kins_database[frame_id] = anns
         
         #* SAM模型的权重文件
         sam_model_type = self.cfg["SAM_MODEL_TYPE"]
@@ -225,7 +234,12 @@ class Segment_Ground_Truth_KITTI:
             added_info = {}
             added_info['image_path'] = '_'.join(image_name_list) + '.png'
             added_info['difficulty'] = obj.level
-            added_info['num_points_in_gt'] = self.db_dict['_'.join(image_name_list)]["num_points_in_gt"]
+            # db_dict uses non-zero-padded frame_id (e.g., '3_Car_0'), but frame_id is 6-digit ('000003')
+            lookup_key = str(int(frame_id)) + '_' + obj.cls_type + '_' + str(idx)
+            if lookup_key in self.db_dict:
+                added_info['num_points_in_gt'] = self.db_dict[lookup_key]["num_points_in_gt"]
+            else:
+                added_info['num_points_in_gt'] = 0
             self.database[obj.cls_type][angle_idx][range_idx].append(added_info)
     
     def custom_save_img(self, img, image_name, image_type = 'png', root = None):
@@ -242,52 +256,63 @@ class Segment_Ground_Truth_KITTI:
         label_txt = self.data_root / 'training' / 'label_2' / (frame_id+'.txt')
         #* 根据标注文件获取GT信息
         objects = get_objects_from_label(str(label_txt))
-        
+
         #* masks是一个列表, 列表中的每个元素是一个字典, 表示这个物体的分割结果
         #* 其中'segmentation'存储的是尺寸为H*W的bool值矩阵, 如果为True, 表示这个像素的位置是当前分割的物体, 否则不是
         img_height, img_width= masks[0]['segmentation'].shape[0], masks[0]['segmentation'].shape[1]
 
-        #* 将分割图合并到一个图里面, 不同的instance用不同的数字标注
-        cnt = 1
-        masked_img = np.zeros((img_height, img_width), dtype = np.int32)
-        for ann in masks:
-            seg = ann['segmentation']
-            masked_img[seg] = cnt
-            cnt+=1
-        
         #* 遍历列表中的索引和值
         for idx, obj in enumerate(objects):
-            #* 需要要求物体无遮挡, 无截断, 并且类别属于所属的类别
-            if(obj.occlusion>0 or obj.cls_type not in self.choosen_class or obj.truncation > 0):
+            #* 允许部分遮挡(occlusion<=1)和轻微截断(truncation<0.5), 以扩充数据库多样性
+            if(obj.occlusion>1 or obj.cls_type not in self.choosen_class or obj.truncation >= 0.5):
                 continue
-            
+
             #* 标签中2D包围框左上角和右下角点的x坐标
             #! 图像坐标系在此定义为竖直向下为x轴, 水平向右为y轴
             #! KITTI box2d存储的是(左上角x坐标, 左上角y坐标, 右下角x坐标, 右下角y坐标)
             #! KITTI的坐标系是水平向右为x轴, 竖直向下为y轴, 和之前定义的正好相反, 因此需要把x, y对调
             top_left_y, top_left_x, bottom_right_y, bottom_right_x = obj.box2d
-            #* 计算2D包围框的中间像素点坐标(像素点是整数)
-            center_x = int((top_left_x+bottom_right_x)/2)
-            center_y = int((top_left_y+bottom_right_y)/2)
-            
+
+            #* 用IoU选择最佳SAM mask，而非依赖中心点（中心点可能落在其他物体上）
+            best_iou = 0.0
+            best_seg = None
+            for ann in masks:
+                seg = ann['segmentation']
+                ys, xs = np.where(seg)
+                if len(ys) == 0:
+                    continue
+                seg_tlx, seg_tly = xs.min(), ys.min()
+                seg_brx, seg_bry = xs.max(), ys.max()
+                iou = self.compute_iou([seg_tlx, seg_tly, seg_brx, seg_bry], obj.box2d)
+                if iou > best_iou:
+                    best_iou = iou
+                    best_seg = seg
+            if best_seg is None or best_iou < 0.3:
+                continue
+
             #* 创建一个H * W * 4的透明图像, 作为最后裁剪前的图片(后面会赋值)
             final_mask = np.zeros((img_height, img_width, 4), dtype=np.uint8)
-            
-            #* masked_img==masked_img[center_x][center_y]会获取一个H * W的bool数组
-            #* 转成unit8方便后面乘255
-            mask = (masked_img==masked_img[center_x][center_y]).astype(np.uint8)
-            mask *= 255
-            
-            #* 创建一个kernel
-            k = np.ones((5, 5), np.uint8)
-            #* 重复20轮, 进行闭运算
-            close_mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, k, iterations=20).astype(np.bool_)
-            
+
+            mask = best_seg.astype(np.uint8) * 255
+
+            #* 根据物体大小自适应选择闭运算kernel
+            obj_w = bottom_right_y - top_left_y
+            obj_h = bottom_right_x - top_left_x
+            obj_size = min(obj_w, obj_h)
+            if obj_size < 50:
+                k_size, iters = 3, 2
+            elif obj_size < 100:
+                k_size, iters = 5, 4
+            else:
+                k_size, iters = 7, 5
+            k = np.ones((k_size, k_size), np.uint8)
+            close_mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, k, iterations=iters).astype(np.bool_)
+
             #* 将close_mask的部分赋值成原图
             final_mask[close_mask, :3]= self.image[close_mask]
             #* 将close_mask部分的透明度设置成不透明
             final_mask[close_mask, 3] = 255
-            
+
             #* 判断这个分割的范围是否合理
             res = self.judge_valid(final_mask, obj.box2d)
             if(res):
@@ -334,10 +359,10 @@ class Segment_Ground_Truth_KITTI:
         
         #* 遍历列表中的索引和值
         for idx, obj in enumerate(objects):
-            #* 需要要求物体无遮挡, 无截断, 并且类别属于所属的类别
-            if(obj.occlusion>0 or obj.cls_type not in self.choosen_class or obj.truncation > 0):
+            #* 允许部分遮挡(occlusion<=1)和轻微截断(truncation<0.5), 以扩充数据库多样性
+            if(obj.occlusion>1 or obj.cls_type not in self.choosen_class or obj.truncation >= 0.5):
                 continue
-            
+
             #* 标签中2D包围框左上角和右下角点的x坐标
             #! 图像坐标系在此定义为竖直向下为x轴, 水平向右为y轴
             #! KITTI box2d存储的是(左上角x坐标, 左上角y坐标, 右下角x坐标, 右下角y坐标)
@@ -419,7 +444,7 @@ class Segment_Ground_Truth_KITTI:
             with open(str(save_address), 'wb') as f:
                 pickle.dump(self.database, f)
             
-    def judge_valid(self, image, label, iou = 0.7):
+    def judge_valid(self, image, label, iou = 0.6):
         #* 判断掩码的位置, findContours的输入是个二值图像
         conv_image = (image[:, :, 3:4]>0).astype(np.uint8)
         conv_image *= 255

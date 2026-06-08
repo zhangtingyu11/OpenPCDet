@@ -126,19 +126,25 @@ class DataAugmentor(object):
         if data_dict is None:
             return partial(self.random_image_flip, config=config)
         images = data_dict["images"]
-        depth_maps = data_dict["depth_maps"]
+        depth_maps = data_dict.get("depth_maps", None)
         gt_boxes = data_dict['gt_boxes']
-        gt_boxes2d = data_dict["gt_boxes2d"]
+        gt_boxes2d = data_dict.get("gt_boxes2d", None)
         calib = data_dict["calib"]
         for cur_axis in config['ALONG_AXIS_LIST']:
             assert cur_axis in ['horizontal']
             images, depth_maps, gt_boxes = getattr(augmentor_utils, 'random_image_flip_%s' % cur_axis)(
                 images, depth_maps, gt_boxes, calib,
             )
+            if gt_boxes2d is not None:
+                W = images.shape[1]
+                gt_boxes2d[:, [0, 2]] = W - gt_boxes2d[:, [2, 0]]
 
         data_dict['images'] = images
-        data_dict['depth_maps'] = depth_maps
+        if depth_maps is not None:
+            data_dict['depth_maps'] = depth_maps
         data_dict['gt_boxes'] = gt_boxes
+        if gt_boxes2d is not None:
+            data_dict['gt_boxes2d'] = gt_boxes2d
         return data_dict
 
     def random_world_translation(self, data_dict=None, config=None):

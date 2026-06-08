@@ -2,7 +2,6 @@ import numpy as np
 import torch.nn as nn
 from ...utils.box_utils import boxes3d_lidar_to_kitti_camera, lidar_boxes_to_image_kitti_torch_cuda
 from ...ops.clocs.clocs_utils import compute_clocs_iou_sparse
-from ...ops.clocs.clocs_utils import CustomCosineSimilarity
 from ..dense_heads.anchor_head_template import AnchorHeadTemplate
 from ...utils import loss_utils
 import torch.nn.functional as F
@@ -264,13 +263,14 @@ class ClocsSECONDHead(AnchorHeadTemplate):
         boxes_2d_num = boxes2d_by_detector.shape[1]
         cls_pred_list = []
         if self.model_cfg.USE_CONTRA:
-          lidar_feature_expanded_list = []
-          image_feature_expanded_list = []
-        for box_2d_preds, box_2d_detector, scores_3d, dist_to_lidar_single, image_shape, lidar_pred in zip(box_preds_on_image, 
+          cos_sim_list = []
+          contrastive_label_list = []
+        max_confidences_list = []
+        for box_2d_preds, box_2d_detector, scores_3d, dist_to_lidar_single, image_shape, lidar_pred in zip(box_preds_on_image,
                                                                                     boxes2d_by_detector,
                                                                                     pred_3d_scores,
                                                                                     dis_to_lidar,
-                                                                                    data_dict["image_shape"], 
+                                                                                    data_dict["image_shape"],
                                                                                     preds):
             scores_2d = box_2d_detector[:, 4:5]
             box_2d_pos = box_2d_detector[:, :4]
@@ -286,15 +286,11 @@ class ClocsSECONDHead(AnchorHeadTemplate):
 
             ious = ious.permute(2, 0, 1).view(1, 4, boxes_3d_num, boxes_2d_num)
             non_empty_mask = (ious[0, 0, :, :]!=-10).nonzero()
-            # if non_empty_mask.shape[0]==0:
-            #   self.cal_loss_flag = False
-            # else:
-            #   self.cal_loss_flag = True
-            
+
             iou_condition = ious[0][0, :, :] > self.model_cfg.IOU_THRESH
             #* 找到每个3D物体中满足条件的2D物体的最大置信度
             max_confidences, _ = torch.max(torch.where(iou_condition, ious[0, 2, :, :], torch.zeros_like(ious[0, 2, :, :])), dim=1)
-            self.forward_ret_dict['3d_max_confidence'] = max_confidences
+            max_confidences_list.append(max_confidences)
             input_features = ious
             if self.model_cfg.USE_CONTRA:
               image_height, image_width = image_shape
@@ -311,37 +307,19 @@ class ClocsSECONDHead(AnchorHeadTemplate):
               image_data = box_2d_detector_normalized.transpose(0, 1).unsqueeze(0).unsqueeze(-1)
               lidar_features_raw = self.lidar_extractor(lidar_data)
               image_features_raw = self.image_extractor(image_data)
-              # lidar_features = lidar_features_raw.squeeze().transpose(0, 1).unsqueeze(1).contiguous()
-              # image_features = image_features_raw.squeeze().transpose(0, 1).unsqueeze(0).contiguous()
-              lidar_num = lidar_features_raw.shape[2]
-              image_num = image_features_raw.shape[2]
-              feature_dim = image_features_raw.shape[1]
-              # lidar_feature_expanded = lidar_features.expand(lidar_num, image_num, feature_dim)
-              # image_feature_expanded = image_features.expand(lidar_num, image_num, feature_dim) 
-              # lidar_feature_expanded_list.append(lidar_feature_expanded.view(1, *lidar_feature_expanded.shape))
-              # image_feature_expanded_list.append(image_feature_expanded.view(1, *image_feature_expanded.shape))
-              # sim_feature = torch.zeros(lidar_num, image_num, device = 0)
-              # TODO 检查反向传播
-              # sim_feature = CustomCosineSimilarity.apply(lidar_features_raw.transpose(0, 1).contiguous(), image_features_raw.squeeze(1).transpose(0, 1).contiguous())
-              if not self.training:
-                sim_feature = CustomCosineSimilarity.apply(lidar_features_raw.squeeze().transpose(0, 1).contiguous(), image_features_raw.squeeze().transpose(0, 1).contiguous())
-              else:
-                sim_feature = sim_matrix(lidar_features_raw.squeeze().transpose(0, 1).contiguous(), image_features_raw.squeeze().transpose(0, 1).contiguous())
-              
-              # sim_feature = sim_matrix(lidar_features_raw.squeeze().transpose(0, 1).contiguous(), image_features_raw.squeeze().transpose(0, 1).contiguous())
-              self.forward_ret_dict["cos_sim"] = sim_feature
-              # cos_similarity(lidar_features, image_features, sim_feature)
+              sim_feature = sim_matrix(lidar_features_raw.squeeze().transpose(0, 1).contiguous(), image_features_raw.squeeze().transpose(0, 1).contiguous())
+              cos_sim_list.append(sim_feature)
+              contrastive_label_list.append(ious[:, 0:1, :, :])
               sim_feature = sim_feature[None, None, :, :]
-              # sim_feature = F.cosine_similarity(lidar_feature_expanded, image_feature_expanded, -1)[None, None, :, :]
               input_features = torch.cat([input_features, sim_feature], dim=1)
 
-            # if (self.cal_loss_flag):
-            non_empty_input_features = (input_features[:, :, non_empty_mask[:, 0], non_empty_mask[:, 1]]).unsqueeze(2)
-            new_res = self.fuse(non_empty_input_features)
-            res = torch.zeros((1, 1, boxes_3d_num, boxes_2d_num), dtype=torch.float32, device=0)-100
-            res[:, :, non_empty_mask[:, 0], non_empty_mask[:, 1]] = new_res.squeeze(2)
-            # else:
-              # res = torch.zeros((1, 1, boxes_3d_num, boxes_2d_num), dtype=torch.float32, device=0)-100
+            if non_empty_mask.shape[0] > 0:
+                non_empty_input_features = (input_features[:, :, non_empty_mask[:, 0], non_empty_mask[:, 1]]).unsqueeze(2)
+                new_res = self.fuse(non_empty_input_features)
+                res = torch.zeros((1, 1, boxes_3d_num, boxes_2d_num), dtype=torch.float32, device=0)-100
+                res[:, :, non_empty_mask[:, 0], non_empty_mask[:, 1]] = new_res.squeeze(2)
+            else:
+                res = torch.zeros((1, 1, boxes_3d_num, boxes_2d_num), dtype=torch.float32, device=0)-100
 
             #* 相当于maxpooling
             output = torch.amax(res, dim = -1)
@@ -349,33 +327,27 @@ class ClocsSECONDHead(AnchorHeadTemplate):
             cls_pred_list.append(output)
         cls_preds = torch.cat(cls_pred_list, dim=0)
         if self.model_cfg.USE_CONTRA:
-          # self.forward_ret_dict['lidar_features_expanded'] = torch.cat(lidar_feature_expanded_list, dim=0)
-          # self.forward_ret_dict['image_features_expanded'] = torch.cat(image_feature_expanded_list, dim=0)
-
-          #* iou大于阈值的位置
-          iou_mask = ious[:, 0:1, :, :] > self.model_cfg.CONTRA_MATCH_IOU
-
-          # #* 根据置信度找到每行最大值的索引
-          # iou = ious[0, 0, :, :]
-          # max_iou_indices3d = torch.argmax(iou, dim=1)
-          
-          # lidar_label3d = torch.zeros(boxes_3d_num, boxes_2d_num, dtype=torch.bool)
-
-          # #* 将每行中IOU大于阈值且置信度最大的位置置为1
-          # row_indices3d = torch.arange(boxes_3d_num)
-          # lidar_label3d[row_indices3d, max_iou_indices3d] = True
-          # lidar_label3d = lidar_label3d.view(1, 1, boxes_3d_num, boxes_2d_num)
-          self.forward_ret_dict['contrastive_label'] = iou_mask
+          self.forward_ret_dict['cos_sim'] = cos_sim_list
+          self.forward_ret_dict['contrastive_label'] = contrastive_label_list
+        self.forward_ret_dict['3d_max_confidence'] = max_confidences_list
 
         self.forward_ret_dict['cls_preds'] = cls_preds
 
         if self.training:
             gt_boxes = data_dict['gt_boxes'].detach().cpu().numpy()
             gt_boxes_classes = np.expand_dims(gt_boxes[:, :, -1], axis=-1)
-            gt_boxes_in_camera = np.expand_dims(boxes3d_lidar_to_kitti_camera(gt_boxes[0], data_dict['calib'][0]), axis=0)
+            batch_size = gt_boxes.shape[0]
+            gt_boxes_camera_list = []
+            preds_camera_list = []
+            for b in range(batch_size):
+                calib_b = data_dict['calib'][b]
+                gt_cam = boxes3d_lidar_to_kitti_camera(gt_boxes[b], calib_b)
+                gt_boxes_camera_list.append(gt_cam)
+                pred_cam = boxes3d_lidar_to_kitti_camera(preds[b].detach().cpu().numpy(), calib_b)
+                preds_camera_list.append(pred_cam)
+            gt_boxes_in_camera = np.stack(gt_boxes_camera_list, axis=0)
             gt_boxes_in_camera = np.concatenate([gt_boxes_in_camera, gt_boxes_classes], axis=-1)
-            #* 在相机坐标系下的预测框
-            preds_in_camera = np.expand_dims(boxes3d_lidar_to_kitti_camera(preds[0].detach().cpu().numpy(), data_dict['calib'][0]), axis=0)
+            preds_in_camera = np.stack(preds_camera_list, axis=0)
             targets_dict = self.assign_targets(
                 preds=preds_in_camera,
                 gt_boxes=gt_boxes_in_camera
@@ -414,27 +386,28 @@ class ClocsSECONDHead(AnchorHeadTemplate):
         box_cls_labels = self.forward_ret_dict['box_cls_labels']
         cls_preds = self.forward_ret_dict['cls_preds']
         if self.model_cfg.USE_LA:
+          batch_size = box_cls_labels.shape[0]
           #* 每个3D物体和与其IOU大于阈值的2D物体的最大2D置信度
-          max3d_confidence = self.forward_ret_dict['3d_max_confidence']
+          max3d_confidence = torch.stack(self.forward_ret_dict['3d_max_confidence'], dim=0)  # [B, N_anchors]
           #* 3D目标检测器的分数取出来求sigmoid
-          sig_preds = (torch.sigmoid(self.forward_ret_dict['preds_3d'])).view(1, -1)
+          sig_preds = torch.sigmoid(self.forward_ret_dict['preds_3d']).squeeze(-1)  # [B, N_anchors]
           #* clocs预测的负样本
-          clocs_neg = (max3d_confidence<self.model_cfg.CLOCS_NEG_IOU_THRESH).view(1, -1)
+          clocs_neg = max3d_confidence < self.model_cfg.CLOCS_NEG_IOU_THRESH
           #* 3D目标检测器预测出来的负样本
-          neg3d = sig_preds<self.model_cfg.CLOCS_NEG_IOU_THRESH
+          neg3d = sig_preds < self.model_cfg.CLOCS_NEG_IOU_THRESH
           #* 标签中的正样本
           positives = box_cls_labels > 0
           #* 如果两个都很低， 但是标签是正样本， 说明这个要变成-1
-          box_cls_labels[clocs_neg & neg3d & positives]=-1
-          
+          box_cls_labels[clocs_neg & neg3d & positives] = -1
+
           #* 3D目标检测器预测出来的正样本
-          pos3d = sig_preds>self.model_cfg.CLOCS_POS_IOU_THRESH
+          pos3d = sig_preds > self.model_cfg.CLOCS_POS_IOU_THRESH
           #* clocs预测出来的正样本
-          clocs_pos = (max3d_confidence>self.model_cfg.CLOCS_POS_IOU_THRESH).view(1, -1)
+          clocs_pos = max3d_confidence > self.model_cfg.CLOCS_POS_IOU_THRESH
           #* 标签中的负样本
-          negatives = box_cls_labels==0
+          negatives = box_cls_labels == 0
           #* 如果预测出来都觉得是正样本， 但是其实是负样本， 也要设置成-1
-          box_cls_labels[pos3d & clocs_pos & negatives]=-1
+          box_cls_labels[pos3d & clocs_pos & negatives] = -1
         
         #* 只关心标签大于等于0的, 大于0是正样本, =0是负样本
         cared = box_cls_labels >= 0  # [N, num_anchors]
@@ -475,25 +448,33 @@ class ClocsSECONDHead(AnchorHeadTemplate):
         return cls_loss, tb_dict
 
     def get_contra_loss(self):
-        # lidar_feature_expanded = self.forward_ret_dict['lidar_features_expanded']
-        # image_feature_expanded = self.forward_ret_dict['image_features_expanded']
-        contra_label = self.forward_ret_dict['contrastive_label'].squeeze().int()
-        cos_sim = self.forward_ret_dict['cos_sim']
-        contra_loss = self.contra_loss_func(contra_label, cos_sim)
-        contra_loss = contra_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['contra_weight']
+        contra_label_list = self.forward_ret_dict['contrastive_label']
+        cos_sim_list = self.forward_ret_dict['cos_sim']
+        batch_size = len(contra_label_list)
+        contra_loss = 0
+        for contra_label, cos_sim in zip(contra_label_list, cos_sim_list):
+            contra_label_binary = (contra_label.squeeze() > self.model_cfg.CONTRA_MATCH_IOU).int()
+            contra_loss += self.contra_loss_func(contra_label_binary, cos_sim)
+        contra_loss = contra_loss / batch_size * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['contra_weight']
         tb_dict = {
-            'contra_loss': contra_loss
+            'contra_loss': contra_loss.item()
         }
         return contra_loss, tb_dict
 
     def assign_targets(self, preds, gt_boxes):
         """
         Args:
+            preds: (B, P, 7)
             gt_boxes: (B, M, 8)
         Returns:
 
         """
-        targets_dict = self.target_assigner.assign_targets(
-            [preds.reshape(*self.anchors[0].shape)], gt_boxes
-        )
-        return targets_dict
+        batch_size = preds.shape[0]
+        cls_labels_list = []
+        for b in range(batch_size):
+            targets_dict_b = self.target_assigner.assign_targets(
+                [preds[b].reshape(*self.anchors[0].shape[1:])],
+                gt_boxes[b:b + 1]
+            )
+            cls_labels_list.append(targets_dict_b['box_cls_labels'])
+        return {'box_cls_labels': torch.cat(cls_labels_list, dim=0)}

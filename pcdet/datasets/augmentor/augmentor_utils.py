@@ -115,7 +115,7 @@ def random_image_flip_horizontal(image, depth_map, gt_boxes, calib):
     Performs random horizontal flip augmentation
     Args:
         image: (H_image, W_image, 3), Image
-        depth_map: (H_depth, W_depth), Depth map
+        depth_map: (H_depth, W_depth), Depth map (can be None)
         gt_boxes: (N, 7), 3D box labels in LiDAR coordinates [x, y, z, w, l, h, ry]
         calib: calibration.Calibration, Calibration object
     Returns:
@@ -129,7 +129,7 @@ def random_image_flip_horizontal(image, depth_map, gt_boxes, calib):
     if enable:
         # Flip images
         aug_image = np.fliplr(image)
-        aug_depth_map = np.fliplr(depth_map)
+        aug_depth_map = np.fliplr(depth_map) if depth_map is not None else None
         
         # Flip 3D gt_boxes by flipping the centroids in image space
         aug_gt_boxes = copy.copy(gt_boxes)

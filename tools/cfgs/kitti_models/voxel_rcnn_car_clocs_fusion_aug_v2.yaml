@@ -191,7 +191,7 @@ MODEL:
         NAME: ClocsVoxelRCNNHead
         CLASS_AGNOSTIC: False
         USE_RES_BLOCK: True
-        USE_EXTRA_FEATURES: False
+        USE_EXTRA_FEATURES: True
         INPUT_FEATURES: 5
         IMAGE_NUM_FILTERS: [16, 32]
         LIDAR_NUM_FILTERS: [16, 32]

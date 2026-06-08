@@ -104,8 +104,8 @@ def repeat_eval_ckpt(model, test_loader, args, eval_output_dir, logger, ckpt_dir
         if cur_epoch_id == -1 or int(float(cur_epoch_id)) < args.start_epoch:
             wait_second = 30
             if cfg.LOCAL_RANK == 0:
-                print('Wait %s seconds for next check (progress: %.1f / %d minutes): %s \r'
-                      % (wait_second, total_time * 1.0 / 60, args.max_waiting_mins, ckpt_dir), end='', flush=True)
+                print(('Wait %s seconds for next check (progress: %.1f / %d minutes): %s \r'
+                      % (wait_second, total_time * 1.0 / 60, args.max_waiting_mins, ckpt_dir)), end='', flush=True)
             time.sleep(wait_second)
             total_time += 30
             if total_time > args.max_waiting_mins * 60 and (first_eval is False):

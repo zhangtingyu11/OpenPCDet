@@ -1,7 +1,8 @@
 from typing import Set
 
 import spconv
-if float(spconv.__version__[2:]) >= 2.2:
+spconv_version = getattr(spconv, '__version__', '1.0')
+if spconv_version >= '2.2':
     spconv.constants.SPCONV_USE_DIRECT_TABLE = False
     
 try:
