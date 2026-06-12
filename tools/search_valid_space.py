@@ -368,8 +368,10 @@ class SearchValidSpace:
             added_image_path_origin = self.data_root / "image_gt_database_train" / added_image_path
             added_image = self.get_image_data(added_image_path_origin)
             added_image_kins_path = self.data_root / "image_gt_database_trainKINS" / added_image_path
-            assert os.path.exists(str(added_image_kins_path))
-            added_image_kins = self.get_image_data(added_image_kins_path)
+            if os.path.exists(str(added_image_kins_path)):
+                added_image_kins = self.get_image_data(added_image_kins_path)
+            else:
+                added_image_kins = added_image.copy()
             
             #* 读取添加的这个样本的原始图片
             added_image_path_direct = self.data_root / self.split_dir / "image_2" / (frame_id+'.png')
@@ -532,19 +534,17 @@ class SearchValidSpace:
             #* 这是原来的包围框
             if(idx < label_box_num):
                 rectangle = patches.Rectangle((-y-width/2,x-length/2), width, length, angle = np.rad2deg(heading), color = '#8F3C2E', alpha=0.7,
-                                              rotation_point = 'center',
                                               label = 'original GT' if not vis_label else None)
                 vis_label = True
             #* 这是添加的包围框
             else:
                 rectangle = patches.Rectangle((-y-width/2,x-length/2), width, length, angle = np.rad2deg(heading), color = '#137BDB', alpha=0.7,
-                                              rotation_point = 'center',
                                               label = 'added GT' if not vis_added else None)
                 vis_added = True
             self.ax.add_patch(rectangle)
 
 if __name__ == '__main__':
-    svs = SearchValidSpace("/home/zty/Project/DeepLearning/OpenPCDet/tools/cfgs/dataset_configs/database_generate_kitti.yaml")
+    svs = SearchValidSpace("cfgs/dataset_configs/database_generate_kitti.yaml")
     svs.plot_valid_area()
     svs.show()
     
