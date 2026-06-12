@@ -450,8 +450,8 @@ class SearchValidSpace:
                 with open('added_lidar.bin', 'w') as f:
                     added_points[:, :3].tofile(f)
                 print(added_image_path)
-                # self.ax.scatter(-added_boxes_lidar_3d[0][1], added_boxes_lidar_3d[0][0], c='r', s=5,
-                #             label = 'choosen position' if not point_vis else None)
+                self.ax.scatter(-added_boxes_lidar_3d[0][1], added_boxes_lidar_3d[0][0], c='r', s=5,
+                             label = 'choosen position' if not point_vis else None)
                 #* 只需要加一次标签就可以
                 point_vis = True
                 #* 添加包围框
@@ -466,8 +466,6 @@ class SearchValidSpace:
                 right = ceil(right)
                 bottom = ceil(bottom)
                 added_boxes_coor2d.append([left, top, right, bottom])
-                #! 画图备用
-                # cv2.imwrite("before_resize.png", added_image_kins)
                 #* 将添加的图片resize成这个尺寸
                 added_image = cv2.resize(added_image, (right-left, bottom-top), interpolation=cv2.INTER_LINEAR)
 
@@ -475,9 +473,6 @@ class SearchValidSpace:
                 added_image_direct = cv2.resize(added_image_direct, (right-left, bottom-top), interpolation=cv2.INTER_LINEAR)
                 #* resize KINS的mask
                 added_image_kins = cv2.resize(added_image_kins, (right-left, bottom-top), interpolation=cv2.INTER_LINEAR)
-                #! 画图备用
-                # cv2.imwrite("after_resize.png", added_image_kins)
-                
                 origin_image = self.paste_image_with_mask(origin_image.copy(), added_image, left, top, right, bottom)
                 origin_image_copy_kins = self.paste_image_with_mask(origin_image.copy(), added_image_kins, left, top, right, bottom)
                 
@@ -488,10 +483,6 @@ class SearchValidSpace:
             origin_image = self.draw_rectangle(origin_image, new_right, new_left, new_bottom, new_top, color = (0, 0, 255))
             origin_image_copy_direct = self.draw_rectangle(origin_image_copy_direct, new_right, new_left, new_bottom, new_top, color = (0, 0, 255))
             origin_image_copy_kins = self.draw_rectangle(origin_image_copy_kins, new_right, new_left, new_bottom, new_top, color = (0, 0, 255))
-            
-            # cv2.rectangle(origin_image, (new_top, new_left), (new_bottom, new_right), color = (0, 0, 255), thickness=2)
-            # cv2.rectangle(origin_image_copy_direct, (new_top, new_left), (new_bottom, new_right), color = (0, 0, 255), thickness=2)
-            # cv2.rectangle(origin_image_copy_kins, (new_top, new_left), (new_bottom, new_right), color = (0, 0, 255), thickness=2)
         n = len(origin_labels)
         for idx, (new_top, new_left, new_bottom, new_right) in enumerate(origin_boxes_2d[:n]):
             # TODO 现在是只画车的, 还需要改改
@@ -500,13 +491,9 @@ class SearchValidSpace:
                 origin_image_copy_direct = self.draw_rectangle(origin_image_copy_direct, ceil(new_right), floor(new_left), ceil(new_bottom), floor(new_top), color = (0, 255, 0))
                 origin_image_copy_kins = self.draw_rectangle(origin_image_copy_kins, ceil(new_right), floor(new_left), ceil(new_bottom), floor(new_top), color = (0, 255, 0))
                 
-                # cv2.rectangle(origin_image, (floor(new_top), floor(new_left)), (ceil(new_bottom), ceil(new_right)), color = (0, 255, 0), thickness=2)
-                # cv2.rectangle(origin_image_copy_direct, (floor(new_top), floor(new_left)), (ceil(new_bottom), ceil(new_right)), color = (0, 255, 0), thickness=2)
-                # cv2.rectangle(origin_image_copy_kins, (floor(new_top), floor(new_left)), (ceil(new_bottom), ceil(new_right)), color = (0, 255, 0), thickness=2)
-                
         cv2.imwrite('augmented_image.png', origin_image[:, :, :3])
-        # cv2.imwrite('augmented_image_direct.png', origin_image_copy_direct[:, :, :3])
-        # cv2.imwrite('augmented_image_kins.png', origin_image_copy_kins[:, :, :3])
+        cv2.imwrite('augmented_image_direct.png', origin_image_copy_direct[:, :, :3])
+        cv2.imwrite('augmented_image_kins.png', origin_image_copy_kins[:, :, :3])
         
         self.plot_lidar(points)
         self.add_boxes(origin_boxes_lidar_3d, origin_label_box_num)
@@ -529,17 +516,11 @@ class SearchValidSpace:
         origin_image[top:bottom, left:right, :] = cropped_image
         
         copy_image = deepcopy(origin_image)
-        #! 画图备用
-        # cv2.imwrite("before_blur.png", copy_image)
         copy_image = cv2.GaussianBlur(copy_image, (3, 3), 0)
-        #! 画图备用
-        # cv2.imwrite("after_blur.png", copy_image)
         cropped_image = origin_image[top:bottom, left:right, :]
         added_image = copy_image[top:bottom, left:right, :]
-        #! 画图备用
         added_image[:, :, 3] = 0
         added_image[alpha_mask, 3] = 255
-        # cv2.imwrite("added_mask.png", added_image)
         cropped_image[alpha_mask] = added_image[alpha_mask]
         origin_image[top:bottom, left:right, :] = cropped_image
         return origin_image
@@ -566,21 +547,4 @@ if __name__ == '__main__':
     svs = SearchValidSpace("/home/zty/Project/DeepLearning/OpenPCDet/tools/cfgs/dataset_configs/database_generate_kitti.yaml")
     svs.plot_valid_area()
     svs.show()
-    # pngs = ["001322_Car_3.png", "000202_Car_0.png", "005797_Car_4.png", "006431_Car_3.png"]
-    # for png in pngs:
-    #     basename = png.split('.')[0]
-    #     frame_id, typ, idx = basename.split('_')
-    #     added_label_file = svs.data_root / svs.split_dir / "label_2" / (frame_id+'.txt')
-    #     added_labels = svs.get_label_data(added_label_file)
-    #     added_image_file = svs.data_root / svs.split_dir / "image_2" / (frame_id+'.png')
-    #     added_image = svs.get_image_data(added_image_file)
-    #     label = added_labels[int(idx)]
-    #     direct_tlx, direct_tly, direct_brx, direct_bry = label.box2d
-    #     direct_tlx = floor(direct_tlx)
-    #     direct_tly = floor(direct_tly)
-    #     direct_brx = ceil(direct_brx)
-    #     direct_bry = ceil(direct_bry)
-    #     added_image_direct = added_image[direct_tly:direct_bry, direct_tlx:direct_brx]
-    #     cv2.imwrite(png, added_image_direct)
-        
     
