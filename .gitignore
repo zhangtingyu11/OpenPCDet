@@ -23,7 +23,6 @@ tests
 # Generated / temp files
 *.log
 *.out
-*.pdf
 /cfgs
 .claude/
 tools/logs/
