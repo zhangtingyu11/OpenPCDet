@@ -226,7 +226,7 @@ class SearchValidSpace:
         plt.axis('off')
         handles, labels = self.ax.get_legend_handles_labels()
         self.ax.legend(handles[::-1], labels[::-1], loc = 'lower right', fontsize=28)
-        plt.savefig('augmented_lidar.png', bbox_inches='tight', dpi = self.fig.dpi, pad_inches=0.0)
+        plt.savefig('augmented_lidar.pdf', bbox_inches='tight', pad_inches=0.0)
         # plt.show()
     
     def plot_valid_area(self):
